@@ -6,12 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ThreadEntity::class],
-    version = 3
+    entities = [ThreadEntity::class, GroupEntity::class],
+    version = 5
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun threadDao(): ThreadDao
+
+    abstract fun groupDao(): GroupDao
 
     companion object {
 

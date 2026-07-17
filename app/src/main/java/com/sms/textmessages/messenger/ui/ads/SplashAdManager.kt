@@ -52,7 +52,7 @@ object SplashAdManager {
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.d("ADS", "Splash AppOpen Failed: ${error.message}")
+                        Log.d("ADS", "Splash AppOpen Failed: code=${error.code} domain=${error.domain} message=${error.message}")
                         appOpenAd = null
                     }
                 }
@@ -74,7 +74,7 @@ object SplashAdManager {
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
-                        Log.d("ADS", "Splash Interstitial Failed: ${error.message}")
+                        Log.d("ADS", "Splash Interstitial Failed: code=${error.code} domain=${error.domain} message=${error.message}")
                         interstitialAd = null
                     }
                 }

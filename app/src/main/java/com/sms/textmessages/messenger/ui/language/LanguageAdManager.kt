@@ -29,7 +29,7 @@ object LanguageAdManager {
             }
             .withAdListener(object : AdListener() {
                 override fun onAdFailedToLoad(error: LoadAdError) {
-                    Log.d("LANGUAGE_AD", "Failed: ${error.message}")
+                    Log.d("LANGUAGE_AD", "Failed: code=${error.code} domain=${error.domain} message=${error.message}")
                     nativeAdState.value = null
                 }
             })

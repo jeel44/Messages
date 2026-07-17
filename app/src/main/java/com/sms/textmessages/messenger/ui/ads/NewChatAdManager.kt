@@ -41,7 +41,7 @@ object NewChatAdManager {
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
 
-                    Log.d("ADS", "NewChat Interstitial Failed: ${error.message}")
+                    Log.d("ADS", "NewChat Interstitial Failed: code=${error.code} domain=${error.domain} message=${error.message}")
 
                     interstitialAd = null
                 }

@@ -24,13 +24,15 @@ import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sms.textmessages.messenger.R
 import com.sms.textmessages.messenger.ui.ads.LanguageAdManager
+import com.sms.textmessages.messenger.ui.ads.AdShimmer
+import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
+import com.google.android.gms.ads.nativead.MediaView
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.*
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.animation.core.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -52,7 +54,7 @@ fun LanguageScreen() {
     var selectedLanguage by remember { mutableStateOf<String?>(null) }
 
     val generalSans = FontFamily(
-        Font(R.font.general_sans_semibold)
+        Font(R.font.general_sans_bold)
     )
 
     Column(
@@ -78,7 +80,7 @@ fun LanguageScreen() {
                 color = Color.White,
                 fontSize = 25.sp,
                 fontFamily = FontFamily(
-                    Font(R.font.general_sans_semibold)
+                    Font(R.font.general_sans_bold)
                 ),
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Start
@@ -96,8 +98,6 @@ fun LanguageScreen() {
                         prefs.edit().putString("app_lang", selectedLanguage).apply()
 
                         LocaleManager.setLocale(activity, selectedLanguage!!)
-
-                        activity.recreate()
 
                         // 🔥 GO TO SET DEFAULT SCREEN
                         activity.startActivity(
@@ -225,11 +225,14 @@ fun LanguageScreen() {
                         adView.findViewById<Button>(R.id.ad_call_to_action)
                     val icon =
                         adView.findViewById<ImageView>(R.id.ad_icon)
+                    val media =
+                        adView.findViewById<MediaView>(R.id.ad_media)
 
                     adView.headlineView = headline
                     adView.bodyView = body
                     adView.callToActionView = cta
                     adView.iconView = icon
+                    adView.mediaView = media
 
                     headline.text = nativeAd.headline ?: ""
                     body.text = nativeAd.body ?: ""
@@ -237,6 +240,14 @@ fun LanguageScreen() {
 
                     nativeAd.icon?.let {
                         icon.setImageDrawable(it.drawable)
+                    }
+
+                    val mediaContent = nativeAd.mediaContent
+                    if (mediaContent == null) {
+                        media.visibility = View.GONE
+                    } else {
+                        media.mediaContent = mediaContent
+                        media.visibility = View.VISIBLE
                     }
 
                     adView.setNativeAd(nativeAd)
@@ -249,44 +260,15 @@ fun LanguageScreen() {
             )
 
         } else {
-            ShimmerAdBox()
+            AdShimmer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .padding(horizontal = 20.dp),
+                variant = AdShimmerVariant.MEDIA_BLOCK
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
     }
-}
-
-@Composable
-fun ShimmerAdBox() {
-
-    val transition = rememberInfiniteTransition(label = "shimmer")
-
-    val xShimmer by transition.animateFloat(
-        initialValue = -300f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmerAnim"
-    )
-
-    val brush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFFE0E0E0),
-            Color(0xFFF5F5F5),
-            Color(0xFFE0E0E0)
-        ),
-        start = Offset(xShimmer, 0f),
-        end = Offset(xShimmer + 300f, 0f)
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(260.dp)
-            .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(brush)
-    )
 }

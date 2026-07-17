@@ -41,7 +41,7 @@ object OpenChatAdManager {
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
 
-                    Log.d("ADS", "OpenChat Failed: ${error.message}")
+                    Log.d("ADS", "OpenChat Failed: code=${error.code} domain=${error.domain} message=${error.message}")
 
                     interstitialAd = null
                 }

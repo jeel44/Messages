@@ -2,16 +2,22 @@ package com.sms.textmessages.messenger
 
 import android.Manifest
 import android.app.role.RoleManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import com.sms.textmessages.messenger.ui.navigation.AppNavigation
+import com.sms.textmessages.messenger.utils.OverlayPermission
 
 class MainActivity : ComponentActivity() {
+
+    private val _openChatSender = mutableStateOf<String?>(null)
+    private val _openChatAutoFocus = mutableStateOf(false)
 
     // Request multiple SMS permissions
     private val smsPermissionLauncher =
@@ -54,16 +60,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        _openChatSender.value = intent.getStringExtra("open_chat_sender")
+        _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
+
         requestSmsPermissions()
         requestContactsPermission()
         requestNotificationPermission()
         requestDefaultRole()
+        requestOverlayPermission()
 
         setContent {
 
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
             val language = prefs.getString("app_lang", null)
-            val openChatSender = intent.getStringExtra("open_chat_sender")
+            val openChatSender = _openChatSender.value
+            val openChatAutoFocus = _openChatAutoFocus.value
 
             if (language == null) {
                 // First launch → Language screen
@@ -74,10 +85,19 @@ class MainActivity : ComponentActivity() {
                     onRequestDefault = {
                         requestDefaultRole()
                     },
-                    openChatSender = openChatSender
+                    openChatSender = openChatSender,
+                    openChatAutoFocus = openChatAutoFocus,
+                    onChatSenderConsumed = { _openChatSender.value = null }
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        _openChatSender.value = intent.getStringExtra("open_chat_sender")
+        _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
     }
 
     private fun requestSmsPermissions() {
@@ -121,6 +141,15 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.POST_NOTIFICATIONS
                 )
             }
+        }
+    }
+
+    // Draw-over-other-apps permission for CategoryOverlayService's popup.
+    // Contextual, one-shot: only prompts if not already granted, alongside
+    // the app's other startup permission requests.
+    private fun requestOverlayPermission() {
+        if (!OverlayPermission.canDrawOverlays(this)) {
+            OverlayPermission.requestOverlayPermission(this)
         }
     }
 

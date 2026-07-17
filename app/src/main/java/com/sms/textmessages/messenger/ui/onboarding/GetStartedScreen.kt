@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
@@ -33,8 +34,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
+import com.google.android.gms.ads.nativead.MediaView
 import com.sms.textmessages.messenger.R
 import com.sms.textmessages.messenger.ads.GetStartedAdManager
+import com.sms.textmessages.messenger.ui.ads.AdShimmer
+import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import com.sms.textmessages.messenger.ui.language.LanguageActivity
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
@@ -59,7 +63,7 @@ fun GetStartedScreen() {
     }
 
     val generalSans = FontFamily(
-        Font(R.font.general_sans_semibold)
+        Font(R.font.general_sans_bold)
     )
 
     // ✅ ONLY PERMISSION LAUNCHER (NO DEFAULT ROLE HERE)
@@ -155,7 +159,8 @@ fun GetStartedScreen() {
                         val permissions = mutableListOf(
                             Manifest.permission.READ_SMS,
                             Manifest.permission.RECEIVE_SMS,
-                            Manifest.permission.SEND_SMS
+                            Manifest.permission.SEND_SMS,
+                            Manifest.permission.READ_CONTACTS
                         )
 
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -208,11 +213,13 @@ fun GetStartedScreen() {
                         val body = adView.findViewById<TextView>(R.id.ad_body)
                         val cta = adView.findViewById<Button>(R.id.ad_call_to_action)
                         val icon = adView.findViewById<ImageView>(R.id.ad_icon)
+                        val media = adView.findViewById<MediaView>(R.id.ad_media)
 
                         adView.headlineView = headline
                         adView.bodyView = body
                         adView.callToActionView = cta
                         adView.iconView = icon
+                        adView.mediaView = media
 
                         headline.text = nativeAd.headline
                         body.text = nativeAd.body
@@ -220,6 +227,14 @@ fun GetStartedScreen() {
 
                         nativeAd.icon?.let {
                             icon.setImageDrawable(it.drawable)
+                        }
+
+                        val mediaContent = nativeAd.mediaContent
+                        if (mediaContent == null) {
+                            media.visibility = View.GONE
+                        } else {
+                            media.mediaContent = mediaContent
+                            media.visibility = View.VISIBLE
                         }
 
                         adView.setNativeAd(nativeAd)
@@ -234,15 +249,12 @@ fun GetStartedScreen() {
 
             } else {
 
-                Box(
+                AdShimmer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(110.dp)
-                        .padding(horizontal = 16.dp)
-                        .background(
-                            Color(0xFFE0E0E0),
-                            RoundedCornerShape(12.dp)
-                        )
+                        .padding(horizontal = 16.dp),
+                    variant = AdShimmerVariant.COMPACT_ROW
                 )
             }
         }

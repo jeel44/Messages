@@ -40,7 +40,7 @@ object ChatBackAdManager {
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
 
-                    Log.d("ADS", "ChatBack Failed: ${error.message}")
+                    Log.d("ADS", "ChatBack Failed: code=${error.code} domain=${error.domain} message=${error.message}")
 
                     interstitialAd = null
                 }

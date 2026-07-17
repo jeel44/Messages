@@ -4,15 +4,14 @@ package com.sms.textmessages.messenger.ui.home
 
 import android.app.Activity
 import android.app.role.RoleManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -32,13 +31,20 @@ import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.TextView
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.FrameLayout
 import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
+import com.google.android.gms.ads.nativead.MediaView
 import com.sms.textmessages.messenger.R
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
 import com.sms.textmessages.messenger.ui.ads.HomeAdManager
 import com.sms.textmessages.messenger.ui.ads.DefaultBannerAdManager
+import com.sms.textmessages.messenger.ui.ads.AdShimmer
+import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.ui.res.painterResource
@@ -50,25 +56,40 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.Image
 import com.sms.textmessages.messenger.ui.chat.ChatMessage
 import com.sms.textmessages.messenger.ui.chat.ChatScreen
+import com.sms.textmessages.messenger.ui.contactinfo.ContactInfoScreen
 import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.rememberLazyListState
 import com.sms.textmessages.messenger.ui.settings.SettingsScreen
+import com.sms.textmessages.messenger.ui.archived.ArchivedScreen
+import com.sms.textmessages.messenger.ui.blocked.BlockedNumbersScreen
 import androidx.compose.material.icons.filled.*
 import com.sms.textmessages.messenger.ui.ads.NewChatAdManager
 import com.sms.textmessages.messenger.ui.ads.OpenChatAdManager
 import com.sms.textmessages.messenger.ui.newchat.NewConversationScreen
+import com.sms.textmessages.messenger.ui.media.SharedMediaScreen
 import android.widget.Toast
+import com.sms.textmessages.messenger.utils.PreferenceManager
+import com.sms.textmessages.messenger.utils.SmsMigrationManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.sms.textmessages.messenger.data.db.AppDatabase
+import com.sms.textmessages.messenger.data.db.GroupEntity
+import com.sms.textmessages.messenger.ui.groupchat.GroupChatScreen
+import com.sms.textmessages.messenger.ui.newgroup.NewGroupScreen
 import kotlinx.coroutines.delay
-import com.sms.textmessages.messenger.utils.OverlayPermission
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.CoroutineScope
+import com.sms.textmessages.messenger.ui.theme.PrimaryBlue
+import com.sms.textmessages.messenger.ui.theme.AccentBlue
+import com.sms.textmessages.messenger.ui.theme.OverlayOtpIndigo
+import com.sms.textmessages.messenger.ui.theme.OverlayOfferAmber
+import com.sms.textmessages.messenger.ui.theme.OverlayCreditGreen
+import com.sms.textmessages.messenger.receiver.NotificationCategory
+import com.sms.textmessages.messenger.receiver.classifyNotification
 
 private val GeneralSansSemiBold = FontFamily(
-    Font(R.font.general_sans_semibold, FontWeight.SemiBold)
+    Font(R.font.general_sans_bold, FontWeight.SemiBold)
 )
 
 private val GeneralSansMedium = FontFamily(
@@ -80,7 +101,7 @@ private val GeneralSansMedium = FontFamily(
 ////////////////////////////////////////////////////////
 
 @Composable
-fun HomeScreen(onRequestDefault: () -> Unit) {
+fun HomeScreen(onRequestDefault: () -> Unit, onSearchClick: () -> Unit = {}) {
 
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -107,7 +128,7 @@ fun HomeScreen(onRequestDefault: () -> Unit) {
     if (!isDefault) {
         DefaultUI(onRequestDefault)
     } else {
-        InboxUI()
+        InboxUI(onSearchClick)
     }
 }
 
@@ -231,20 +252,128 @@ fun DefaultUI(onRequestDefault: () -> Unit) {
 ////////////////////////////////////////////////////////
 
 @Composable
-fun InboxUI() {
+fun InboxUI(onSearchClick: () -> Unit = {}) {
     var selectedChat by remember { mutableStateOf<SmsThread?>(null) }
+    // Hoisted alongside selectedChat (not remembered inside the
+    // `if (selectedChat != null)` block) and explicitly preloaded together
+    // with selectedChat at every call site that opens a thread, in the same
+    // action, before the async load starts. This guarantees the previous
+    // thread's messages can never be the ones rendered for the newly
+    // selected thread, even for one frame. Already the full SMS+MMS timeline
+    // - see SmsRepository.loadThreadMessages() - not just the SMS half, so
+    // there's no separate attachments list to load/assign alongside it.
+    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+
+    // TEMPORARY DEBUG LOGGING - traces selectedChat/messages state transitions.
+    var lastLoggedChatId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(selectedChat?.threadId) {
+        Log.d(
+            "ChatFlashDebug",
+            "ts=${System.currentTimeMillis()} HomeScreen selectedChat CHANGED: " +
+                "${lastLoggedChatId} -> ${selectedChat?.threadId} (phone=${selectedChat?.phone})"
+        )
+        lastLoggedChatId = selectedChat?.threadId
+    }
+    LaunchedEffect(messages) {
+        Log.d(
+            "ChatFlashDebug",
+            "ts=${System.currentTimeMillis()} HomeScreen messages CHANGED: size=${messages.size} " +
+                "firstMsgText=${messages.firstOrNull()?.text?.take(30)}"
+        )
+    }
+
     val context = LocalContext.current
     val activity = context as Activity
-    var isSearching by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
+    var showFilterSheet by remember { mutableStateOf(false) }
     var openSettings by remember { mutableStateOf(false) }
-    var selectedMessages by remember { mutableStateOf(setOf<Long>()) }
-    var pinnedSenders by remember { mutableStateOf(setOf<String>()) }
+    var openArchived by remember { mutableStateOf(false) }
+    var openBlocked by remember { mutableStateOf(false) }
+    var selectedMessages by remember { mutableStateOf(setOf<Long>()) } // stores threadId
     var openNewChat by remember { mutableStateOf(false) }
+    var openNewGroup by remember { mutableStateOf(false) }
+    var activeGroup by remember { mutableStateOf<Pair<String, List<String>>?>(null) }
+    var showContactInfo by remember { mutableStateOf(false) }
+    var openSharedMediaPhone by remember { mutableStateOf<String?>(null) }
+    var startChatSearch by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val smsList by viewModel.smsList.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    // Trigger initial sync from content://sms into Room the moment InboxUI is composed.
+    // Without this, Room is empty on first launch (after becoming default app) and the
+    // Flow never emits non-empty because nothing has written to it yet.
+    LaunchedEffect(Unit) {
+        viewModel.refreshInbox()
+    }
+
+    // Live-refresh the inbox thread list on a new MMS. SMS doesn't need an
+    // observer here - SmsReceiver writes the new/updated ThreadEntity directly
+    // into Room on arrival, and smsList (below) is a reactive Room Flow, so it
+    // picks that up on its own. MmsDownloadCompleteReceiver only inserts into
+    // content://mms (by design - see MmsProvider), so Room never learns about
+    // a new or newly-bumped MMS thread unless something re-syncs it; this
+    // observer is that trigger, calling the same refreshInbox() the initial
+    // sync above uses.
+    DisposableEffect(Unit) {
+
+        val mmsInboxObserver = object : android.database.ContentObserver(
+            android.os.Handler(android.os.Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean) {
+                viewModel.refreshInbox()
+            }
+        }
+
+        context.contentResolver.registerContentObserver(
+            android.provider.Telephony.Mms.CONTENT_URI,
+            true,
+            mmsInboxObserver
+        )
+
+        onDispose {
+            context.contentResolver.unregisterContentObserver(mmsInboxObserver)
+        }
+    }
+
+    // One-time migration from whatever app was previously the default SMS
+    // handler - see SmsMigrationManager. Blocked numbers are imported
+    // silently (platform-level data, reliable); possibly-archived threads
+    // are only ever surfaced as a dismissible suggestion below, never
+    // auto-archived. Both are guarded by their own persisted flag so this
+    // only ever runs once, regardless of how many times InboxUI recomposes.
+    var archiveSuggestionThreads by remember { mutableStateOf<List<SmsThread>>(emptyList()) }
+    var showArchiveSuggestion by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+
+        withContext(Dispatchers.IO) {
+
+            if (!PreferenceManager.isBlockedImportDone(context)) {
+                SmsMigrationManager.importBlockedNumbers(context)
+                PreferenceManager.setBlockedImportDone(context)
+            }
+
+            if (!PreferenceManager.isArchiveSuggestionChecked(context)) {
+
+                val alreadyArchived = PreferenceManager.getArchivedNumbers(context)
+
+                val candidates = SmsMigrationManager.findPossiblyArchivedThreads(context)
+                    .filter { !alreadyArchived.contains(it.phone.takeLast(10)) }
+
+                PreferenceManager.setArchiveSuggestionChecked(context)
+
+                if (candidates.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        archiveSuggestionThreads = candidates
+                        showArchiveSuggestion = true
+                    }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(smsList) {
         Log.d("TRACE_UI", "UI list updated size=${smsList.size}")
@@ -254,54 +383,33 @@ fun InboxUI() {
         }
     }
 
+    // Auto-scroll to a new top conversation (new SMS bumping a thread to #1),
+    // but only when the user is already near the top - never yank their scroll
+    // position while they're reading further down the list.
+    var previousTopThreadId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(smsList) {
+        val newTopThreadId = smsList.firstOrNull()?.threadId
+        val priorTopThreadId = previousTopThreadId
+        previousTopThreadId = newTopThreadId
+
+        if (priorTopThreadId != null &&
+            newTopThreadId != null &&
+            newTopThreadId != priorTopThreadId &&
+            listState.firstVisibleItemIndex <= 1
+        ) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
 
 
     val contentResolver = context.contentResolver
 
     LaunchedEffect(Unit) {
 
-        OverlayPermission.requestOverlayPermission(activity)
-
-    }
-
-    LaunchedEffect(Unit) {
-
         OpenChatAdManager.load(activity)
         NewChatAdManager.load(activity)
 
-    }
-
-    DisposableEffect(Unit) {
-
-        val receiver = object : BroadcastReceiver() {
-
-            override fun onReceive(context: Context, intent: Intent) {
-
-                Log.d("SMS_DEBUG", "InboxUI received broadcast")
-
-                if (intent.action == "SMS_INBOX_UPDATED") {
-
-                    scope.launch {
-
-                        viewModel.refreshInbox()
-
-                    }
-                }
-            }
-        }
-
-        val filter = IntentFilter("SMS_INBOX_UPDATED")
-
-        ContextCompat.registerReceiver(
-            context,
-            receiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -316,7 +424,7 @@ fun InboxUI() {
                 HomeAdManager.loadNative(activity)
 
                 // Reload banner if needed
-                DefaultBannerAdManager.loadBanner(activity)
+                HomeAdManager.loadBanner(activity)
             }
         }
 
@@ -378,58 +486,30 @@ fun InboxUI() {
             }
         }
 
-    val filteredList = smsList
+    // archived/blocked exclusion and pinned-first/date-desc ordering are both
+    // enforced by ThreadDao's WHERE/ORDER BY (single reactive source of truth
+    // - see ThreadDao.getThreadsFlow()), so smsList already arrives filtered
+    // and sorted; this only layers the category/search UI filters on top,
+    // preserving that order.
+    val filteredList = remember(searchIndex, selectedFilter, debouncedSearch) {
+        var result = if (selectedFilter == "All SMS") {
+            searchIndex
+        } else {
+            searchIndex.filter { triple ->
+                filterMessages(listOf(triple.first), selectedFilter).isNotEmpty()
+            }
+        }
 
-//    val filteredList by remember(
-//        smsList, // 🔥 IMPORTANT FIX
-//        selectedFilter,
-//        debouncedSearch,
-//        pinnedSenders,
-//        searchIndex
-//    ) {
-//
-//        derivedStateOf {
-//
-//            var result: List<Triple<SmsThread, String, String>> =
-//                if (selectedFilter == "All SMS") {
-//                    searchIndex
-//                } else {
-//                    searchIndex.filter { triple ->
-//                        filterMessages(listOf(triple.first), selectedFilter).isNotEmpty()
-//                    }
-//                }
-//
-//            if (debouncedSearch.isNotEmpty()) {
-//
-//                val query = debouncedSearch.lowercase(Locale.getDefault())
-//
-//                result = result.filter { triple ->
-//
-//                    val sms = triple.first
-//                    val name = triple.second
-//                    val message = triple.third
-//
-//                    name.lowercase(Locale.getDefault()).contains(query) ||
-//                            sms.phone.contains(query) ||
-//                            message.contains(query)
-//                }
-//            }
-//
-//            val pinnedSet = pinnedSenders
-//
-//            result
-//                .map { triple -> triple.first }
-//                .sortedWith(
-//                    compareByDescending<SmsThread> { pinnedSet.contains(it.phone) }
-//                        .thenByDescending { it.date }
-//                )
-//        }
-//    }
+        if (debouncedSearch.isNotEmpty()) {
+            val query = debouncedSearch.lowercase(Locale.getDefault())
+            result = result.filter { triple ->
+                triple.second.lowercase(Locale.getDefault()).contains(query) ||
+                        triple.first.phone.contains(query) ||
+                        triple.third.contains(query)
+            }
+        }
 
-
-    BackHandler(enabled = isSearching) {
-        isSearching = false
-        searchText = ""
+        result.map { it.first }
     }
 
 
@@ -437,17 +517,59 @@ fun InboxUI() {
     if (selectedChat != null) {
 
         BackHandler {
-            selectedChat = null
+            if (openSharedMediaPhone != null) {
+                openSharedMediaPhone = null
+            } else if (showContactInfo) {
+                showContactInfo = false
+            } else {
+                selectedChat = null
+            }
         }
 
         val contactName = getContactName(context, selectedChat!!.phone)
 
-        var messages by remember { mutableStateOf<List<SmsMessage>>(emptyList()) }
+        if (showContactInfo) {
+
+            ContactInfoScreen(
+                contactName = contactName,
+                phoneNumber = selectedChat!!.phone,
+                onBack = {
+                    showContactInfo = false
+                },
+                onBlockContact = {
+                    showContactInfo = false
+                    selectedChat = null
+                },
+                onOpenSharedMedia = {
+                    openSharedMediaPhone = selectedChat!!.phone
+                    showContactInfo = false
+                },
+                onSearchInChat = {
+                    startChatSearch = true
+                    showContactInfo = false
+                }
+            )
+
+            return
+        }
+
+        openSharedMediaPhone?.let { sharedMediaPhone ->
+
+            SharedMediaScreen(
+                phoneNumber = sharedMediaPhone,
+                onBack = {
+                    openSharedMediaPhone = null
+                },
+                onMediaClick = {}
+            )
+
+            return
+        }
 
         LaunchedEffect(selectedChat) {
 
             messages = withContext(Dispatchers.IO) {
-                SmsRepository.loadMessages(
+                SmsRepository.loadThreadMessages(
                     context,
                     selectedChat!!.threadId
                 )
@@ -468,7 +590,7 @@ fun InboxUI() {
 
                     scope.launch(Dispatchers.IO) {
 
-                        val updated = SmsRepository.loadMessages(
+                        val updated = SmsRepository.loadThreadMessages(
                             context,
                             selectedChat!!.threadId
                         )
@@ -486,6 +608,15 @@ fun InboxUI() {
                 observer
             )
 
+            // Same observer instance, registered on content://mms as well - a
+            // new MMS in this thread should reload it exactly like a new SMS
+            // does. unregisterContentObserver below removes it from both URIs.
+            context.contentResolver.registerContentObserver(
+                android.provider.Telephony.Mms.CONTENT_URI,
+                true,
+                observer
+            )
+
             onDispose {
                 context.contentResolver.unregisterContentObserver(observer)
             }
@@ -494,22 +625,95 @@ fun InboxUI() {
         ChatScreen(
             contactName = contactName,
             phoneNumber = selectedChat!!.phone,
-            messages = messages.map { msg ->
-                ChatMessage(
-                    text = msg.body,
-                    time = formatMessageDate(msg.date),
-                    date = msg.date,
-                    isMe = msg.type == 2
-                )
-            },
+            threadId = selectedChat!!.threadId,
+            messages = messages,
             onBackClick = {
                 selectedChat = null
+            },
+            onContactClick = {
+                showContactInfo = true
+            },
+            onOpenSharedMedia = {
+                openSharedMediaPhone = selectedChat!!.phone
+            },
+            onBlockContact = {
+                showContactInfo = false
+                selectedChat = null
+            },
+            startWithSearchOpen = startChatSearch
+        )
+
+        LaunchedEffect(selectedChat) {
+            // Consumed as ChatScreen's initial state above - reset so the next
+            // chat opened (a different thread, or this one reopened later)
+            // doesn't inherit a stale search-open flag.
+            startChatSearch = false
+        }
+
+        return
+    }
+
+    activeGroup?.let { (groupId, phones) ->
+
+        BackHandler {
+            activeGroup = null
+        }
+
+        GroupChatScreen(
+            groupId = groupId,
+            participantNumbers = phones,
+            onBackClick = {
+                activeGroup = null
             }
         )
 
         return
     }
 
+    // Neither a chat nor a group chat is open at this point (both branches
+    // above already returned) - this is the true Inbox root. There's nothing
+    // left for Back to close, so the default Activity-finish behavior would
+    // destroy the whole task instead of just backgrounding it, forcing every
+    // later reopen through SplashActivity's full startup sequence again
+    // (it's the app's only LAUNCHER entry point). moveTaskToBack keeps the
+    // task and process alive so the next reopen resumes instantly instead.
+    BackHandler {
+        activity.moveTaskToBack(false)
+    }
+
+    // Everything below this point only composes when neither a chat nor a
+    // group chat is open (both branches above end in `return`). Because of
+    // that, this whole Scaffold subtree is torn down while a chat is open
+    // and freshly mounted - not just recomposed - every time the user
+    // returns here, the same way ChatScreen's own LaunchedEffect(Unit)
+    // (ChatScreen.kt) already re-fires on every chat entry. Placing the
+    // reload-on-return effects here (rather than near the top of InboxUI,
+    // where OpenChatAdManager/NewChatAdManager's LaunchedEffect(Unit) lives)
+    // is what makes them actually re-run on return-from-chat instead of only
+    // once per InboxUI's lifetime.
+
+    // Native ad: reload-on-return only, no timer - a fresh native ad every
+    // time the user lands back on the inbox, and nothing else.
+    LaunchedEffect(Unit) {
+        HomeAdManager.loadNative(activity)
+    }
+
+    // Banner ad: reload-on-return, then a 30s (Google's published minimum
+    // banner refresh interval) auto-refresh loop for as long as this
+    // Scaffold stays mounted. This is a single coroutine, not two competing
+    // timers - the very first iteration below IS the reload-on-return, and
+    // every later iteration is 30s after the previous one, so there is no
+    // separate independent clock that could fire close together with a
+    // return-triggered reload. Cancelled automatically (LaunchedEffect's
+    // coroutine is cancelled on dispose) the moment this Scaffold leaves
+    // composition again, e.g. by opening a chat - it does not keep running
+    // in the background while a chat is open.
+    LaunchedEffect(Unit) {
+        while (true) {
+            HomeAdManager.loadBanner(activity)
+            delay(30_000)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -526,54 +730,7 @@ fun InboxUI() {
                             fontFamily = GeneralSansSemiBold
                         )
 
-                    } else if (isSearching) {
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-
-                            IconButton(
-                                onClick = {
-                                    isSearching = false
-                                    searchText = ""
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close",
-                                    tint = Color.Black
-                                )
-                            }
-
-                            BasicTextField(
-                                value = searchText,
-                                onValueChange = { searchText = it },
-                                singleLine = true,
-                                textStyle = LocalTextStyle.current.copy(
-                                    color = Color.Black,
-                                    fontSize = 18.sp,
-                                    fontFamily = GeneralSansMedium
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(end = 16.dp),
-                                decorationBox = { innerTextField ->
-                                    if (searchText.isEmpty()) {
-                                        Text(
-                                            text = "Search messages",
-                                            color = Color(0xFF757575),
-                                            fontSize = 18.sp,
-                                            fontFamily = GeneralSansMedium
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            )
-                        }
-                    }else {
+                    } else {
 
                         Text(
                             text = "Messages",
@@ -624,7 +781,11 @@ fun InboxUI() {
 
                         IconButton(onClick = {
 
-                            markSelectedAsRead(context, selectedMessages)
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    markSelectedAsRead(context, selectedMessages)
+                                }
+                            }
 
                             selectedMessages = emptySet()
 
@@ -639,17 +800,17 @@ fun InboxUI() {
 
                         IconButton(onClick = {
 
-                            val senders =
-                                smsList
-                                    .filter { selectedMessages.contains(it.date) }
-                                    .map { it.phone }
+                            val selectedThreads =
+                                smsList.filter { selectedMessages.contains(it.threadId) }
+                            val shouldPin = selectedThreads.any { !it.pinned }
 
-                            pinnedSenders =
-                                if (senders.all { pinnedSenders.contains(it) }) {
-                                    pinnedSenders - senders
-                                } else {
-                                    pinnedSenders + senders
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    selectedThreads.forEach { thread ->
+                                        SmsRepository.setPinned(context, thread.phone, shouldPin)
+                                    }
                                 }
+                            }
 
                             selectedMessages = emptySet()
 
@@ -664,7 +825,35 @@ fun InboxUI() {
 
                         IconButton(onClick = {
 
-                            deleteMessages(context, selectedMessages)
+                            val senders =
+                                smsList
+                                    .filter { selectedMessages.contains(it.threadId) }
+                                    .map { it.phone }
+
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    senders.forEach { SmsRepository.archiveThread(context, it) }
+                                }
+                            }
+
+                            selectedMessages = emptySet()
+
+                        }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_archive),
+                                contentDescription = "Archive",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        IconButton(onClick = {
+
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    deleteMessages(context, selectedMessages)
+                                }
+                            }
 
                             selectedMessages = emptySet()
 
@@ -679,15 +868,45 @@ fun InboxUI() {
 
                     } else {
 
+                        val isFiltered = selectedFilter != "All SMS" || debouncedSearch.isNotEmpty()
+
+                        if (isFiltered) {
+                            Text(
+                                text = if (selectedFilter != "All SMS") selectedFilter else "Filtered",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontFamily = GeneralSansMedium,
+                                modifier = Modifier.padding(end = 2.dp)
+                            )
+                        }
+
                         IconButton(
-                            onClick = {
-                                isSearching = !isSearching
-                                if (!isSearching) searchText = ""
-                            }
+                            onClick = { showFilterSheet = true }
                         ) {
+                            Box {
+                                Icon(
+                                    imageVector = Icons.Default.FilterAlt,
+                                    contentDescription = "Filter conversations",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+
+                                if (isFiltered) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .align(Alignment.TopEnd)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFF5252))
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(onClick = onSearchClick) {
                             Icon(
-                                painter = painterResource(R.drawable.ic_search_custom),
-                                contentDescription = null,
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search all messages",
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -705,29 +924,49 @@ fun InboxUI() {
                 },
 
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = if (isSearching) Color.White else Color(0xFF3E6AE1)
+                    containerColor = Color(0xFF3E6AE1)
                 )
                 )        },
         floatingActionButton = {
-            FloatingActionButton(
-              onClick = {
+            // Existing "New chat" FAB left untouched below; a smaller "New
+            // group" FAB is stacked above it rather than restructuring the
+            // single-FAB click handling into a menu/dropdown.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-                  NewChatAdManager.onClick(activity) {
+                SmallFloatingActionButton(
+                    onClick = { openNewGroup = true },
+                    containerColor = Color(0xFF3E6AE1)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = "New group",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-                      openNewChat = true
+                Spacer(modifier = Modifier.height(12.dp))
 
-                  }
-                },
-              containerColor = Color(0xFF3E6AE1),
-                modifier = Modifier.size(60.dp)
-            ) {
+                FloatingActionButton(
+                  onClick = {
 
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
+                      NewChatAdManager.onClick(activity) {
+
+                          openNewChat = true
+
+                      }
+                    },
+                  containerColor = Color(0xFF3E6AE1),
+                    modifier = Modifier.size(60.dp)
+                ) {
+
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         },
         bottomBar = {
@@ -739,7 +978,7 @@ fun InboxUI() {
             ) {
 
                 if (RemoteConfigManager.homeBannerEnabled()) {
-                    BannerAdSection()
+                    HomeBannerAdSection()
                 }
 
             }
@@ -753,40 +992,28 @@ fun InboxUI() {
         ) {
 
             // Native ad always visible
-            if (RemoteConfigManager.homeNativeEnabled() && !isSearching) {
+            if (RemoteConfigManager.homeNativeEnabled()) {
                 NativeAdSection(nativeAd)
             }
 
-            if (!isSearching) {
+            if (isLoading && smsList.isEmpty()) {
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    filters.forEach {
-                        FilterChipItem(
-                            text = it,
-                            selected = selectedFilter == it,
-                            onClick = { selectedFilter = it }
-                        )
-                    }
+                    CircularProgressIndicator(color = Color(0xFF3E6AE1))
                 }
-            }
 
-
-
-
-            if (filteredList.isEmpty() && searchText.isNotEmpty()) {
+            } else if (filteredList.isEmpty()) {
 
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No messages found",
+                        text = if (searchText.isNotEmpty()) "No messages found"
+                               else "No messages in this category",
                         fontSize = 16.sp,
                         color = Color.Gray,
                         fontFamily = GeneralSansMedium
@@ -807,26 +1034,38 @@ fun InboxUI() {
                         items = filteredList,
                         key = { it.threadId }
                     ) { sms ->
-                        Log.d("TRACE_UI", "Rendering -> id=${sms.threadId} date=${sms.date}")
+                        val time = remember(sms.date) { formatMessageDate(sms.date) }
+                        val copyableCode = remember(sms.lastMessage) { extractCopyableCode(sms.lastMessage) }
+                        val category = remember(sms.phone, sms.lastMessage) {
+                            classifyNotification(sms.phone, sms.lastMessage)
+                        }
                         MessageItem(
                             sender = contactNames[sms.phone] ?: sms.phone,
                             message = sms.lastMessage,
-                            time = formatMessageDate(sms.date),
+                            time = time,
                             isRead = if (selectedChat?.phone == sms.phone) true else sms.isRead,
-                            isSelected = selectedMessages.contains(sms.date),
-                            isPinned = pinnedSenders.contains(sms.phone),
+                            isSelected = selectedMessages.contains(sms.threadId),
+                            isPinned = sms.pinned,
+                            isServiceSender = isServiceSenderPhone(sms.phone),
+                            category = category,
+                            copyableCode = copyableCode,
 
                             onClick = {
 
                                 if (selectedMessages.isNotEmpty()) {
 
                                     selectedMessages =
-                                        if (selectedMessages.contains(sms.date))
-                                            selectedMessages - sms.date
+                                        if (selectedMessages.contains(sms.threadId))
+                                            selectedMessages - sms.threadId
                                         else
-                                            selectedMessages + sms.date
+                                            selectedMessages + sms.threadId
 
                                 } else {
+
+                                    Log.d(
+                                        "ChatFlashDebug",
+                                        "ts=${System.currentTimeMillis()} HomeScreen ROW TAPPED threadId=${sms.threadId} phone=${sms.phone}"
+                                    )
 
                                     scope.launch {
 
@@ -834,9 +1073,21 @@ fun InboxUI() {
                                             SmsRepository.markThreadAsRead(context, sms.threadId)
                                         }
 
-                                        viewModel.refreshInbox()
+                                        // Loaded here, before OpenChatAdManager's callback fires,
+                                        // so ChatScreen's very first composition already has the
+                                        // full history - messages and selectedChat are assigned
+                                        // together below, so there's no frame where ChatScreen
+                                        // mounts with an empty list.
+                                        val loadedMessages = withContext(Dispatchers.IO) {
+                                            SmsRepository.loadThreadMessages(context, sms.threadId)
+                                        }
 
                                         OpenChatAdManager.onClick(activity) {
+                                            Log.d(
+                                                "ChatFlashDebug",
+                                                "ts=${System.currentTimeMillis()} HomeScreen ad callback firing, about to set messages + selectedChat threadId=${sms.threadId}"
+                                            )
+                                            messages = loadedMessages
                                             selectedChat = sms
                                         }
                                     }
@@ -844,9 +1095,11 @@ fun InboxUI() {
                             },
 
                             onLongClick = {
-                                selectedMessages = selectedMessages + sms.date
+                                selectedMessages = selectedMessages + sms.threadId
                             }
                         )
+
+                        HorizontalDivider(thickness = 0.5.dp, color = Color(0xFFE0E0E0))
                     }
                 }
             }
@@ -855,9 +1108,90 @@ fun InboxUI() {
     if (openSettings) {
 
         SettingsScreen(
-            onBack = { openSettings = false }
+            onBack = { openSettings = false },
+            onOpenArchived = { openArchived = true },
+            onOpenBlocked = { openBlocked = true }
         )
 
+    }
+
+    if (openArchived) {
+
+        ArchivedScreen(
+            onBack = {
+                openArchived = false
+            },
+            onOpenChat = { phoneNumber, threadId ->
+
+                openArchived = false
+                openSettings = false
+
+                scope.launch {
+
+                    // Preloaded before selectedChat is set, same as the inbox row's
+                    // onClick above - avoids a blank-then-populate flash.
+                    val loadedMessages = withContext(Dispatchers.IO) {
+                        SmsRepository.loadThreadMessages(context, threadId)
+                    }
+
+                    messages = loadedMessages
+                    selectedChat = SmsThread(
+                        phone = phoneNumber,
+                        lastMessage = "",
+                        date = System.currentTimeMillis(),
+                        isRead = true,
+                        threadId = threadId
+                    )
+                }
+            }
+        )
+    }
+
+    if (openBlocked) {
+
+        BlockedNumbersScreen(
+            onBack = {
+                openBlocked = false
+            }
+        )
+    }
+
+    if (showArchiveSuggestion) {
+
+        val count = archiveSuggestionThreads.size
+
+        AlertDialog(
+            onDismissRequest = { showArchiveSuggestion = false },
+            title = { Text("Archive suggestion") },
+            text = {
+                Text(
+                    "We found $count conversation${if (count == 1) "" else "s"} that may " +
+                        "have been archived in your previous messaging app. Archive " +
+                        "${if (count == 1) "it" else "them"} here too?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            archiveSuggestionThreads.forEach {
+                                SmsRepository.archiveThread(context, it.phone)
+                            }
+                        }
+                    }
+
+                    showArchiveSuggestion = false
+                }) {
+                    Text("Archive")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveSuggestion = false }) {
+                    Text("Not now")
+                }
+            }
+        )
     }
 
     if (openNewChat) {
@@ -866,17 +1200,220 @@ fun InboxUI() {
             onBack = { openNewChat = false },
             onStartChat = { name, phone ->
 
-                selectedChat = SmsThread(
-                    phone = phone,
-                    lastMessage = "",
-                    date = System.currentTimeMillis(),
-                    isRead = true,
-                    threadId = 0L
-                )
+                scope.launch {
 
-                openNewChat = false
+                    val existingThreadId = withContext(Dispatchers.IO) {
+                        SmsRepository.findExistingThreadId(context, phone)
+                    }
+
+                    // DisposableEffect(selectedChat) below only registers the
+                    // ContentObserver for future changes - it does not do an
+                    // initial load. Load here first so ChatScreen's first
+                    // composition already has the existing thread's history,
+                    // same as the inbox row tap and Archived-screen open paths.
+                    val loadedMessages = if (existingThreadId != null) {
+                        withContext(Dispatchers.IO) {
+                            SmsRepository.loadThreadMessages(context, existingThreadId)
+                        }
+                    } else {
+                        emptyList()
+                    }
+
+                    messages = loadedMessages
+                    selectedChat = SmsThread(
+                        phone = phone,
+                        lastMessage = "",
+                        date = System.currentTimeMillis(),
+                        isRead = true,
+                        threadId = existingThreadId ?: 0L
+                    )
+
+                    openNewChat = false
+                }
             }
         )
+    }
+
+    if (openNewGroup) {
+
+        NewGroupScreen(
+            onBack = { openNewGroup = false },
+            onCreateGroup = { phones ->
+
+                val newGroupId = java.util.UUID.randomUUID().toString()
+
+                scope.launch {
+
+                    withContext(Dispatchers.IO) {
+                        AppDatabase.getDatabase(context).groupDao().insertGroup(
+                            GroupEntity(
+                                groupId = newGroupId,
+                                participantNumbers = phones.joinToString(","),
+                                groupName = null,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+
+                    activeGroup = newGroupId to phones
+                    openNewGroup = false
+                }
+            }
+        )
+    }
+
+    if (showFilterSheet) {
+
+        val sheetState = rememberModalBottomSheetState()
+
+        fun closeFilterSheet() {
+            scope.launch { sheetState.hide() }.invokeOnCompletion {
+                if (!sheetState.isVisible) {
+                    showFilterSheet = false
+                }
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            sheetState = sheetState,
+            containerColor = Color.White,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+        ) {
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = "Filter conversations",
+                        fontSize = 18.sp,
+                        fontFamily = GeneralSansSemiBold,
+                        color = Color.Black
+                    )
+
+                    IconButton(onClick = { closeFilterSheet() }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFF757575),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF1F1F1), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = Color(0xFF757575),
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    BasicTextField(
+                        value = searchText,
+                        onValueChange = { searchText = it },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(
+                            color = Color.Black,
+                            fontSize = 16.sp,
+                            fontFamily = GeneralSansMedium
+                        ),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { innerTextField ->
+                            if (searchText.isEmpty()) {
+                                Text(
+                                    text = "Search by name or number",
+                                    color = Color(0xFF9E9E9E),
+                                    fontSize = 16.sp,
+                                    fontFamily = GeneralSansMedium
+                                )
+                            }
+                            innerTextField()
+                        }
+                    )
+
+                    if (searchText.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchText = "" },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear search",
+                                tint = Color(0xFF757575),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Category",
+                    fontSize = 13.sp,
+                    fontFamily = GeneralSansMedium,
+                    color = Color(0xFF757575)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    filters.forEach {
+                        FilterChipItem(
+                            text = it,
+                            selected = selectedFilter == it,
+                            onClick = { selectedFilter = it }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Color(0xFF3E6AE1))
+                        .clickable { closeFilterSheet() }
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Done",
+                        fontSize = 16.sp,
+                        fontFamily = GeneralSansSemiBold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -885,6 +1422,46 @@ fun InboxUI() {
 // 🔵 MESSAGE ITEM
 ////////////////////////////////////////////////////////
 
+private data class CategoryPillStyle(
+    val label: String,
+    val textColor: Color,
+    val backgroundColor: Color
+)
+
+// Reuses classifyNotification (NotificationClassifier.kt) - the same
+// classifier SmsReceiver's notifications and CategoryOverlayCard use - so the
+// inbox pill always agrees with what the notification/overlay called this
+// message. Colors reuse the same role-to-color mapping as
+// CategoryOverlayCard.visualsFor (AccentBlue/personal, indigo/OTP, amber/offer,
+// green/transaction) rather than inventing a separate palette.
+// SERVICE_DEFAULT (a service sender that isn't OTP/transaction/offer) shows
+// no pill - it doesn't correspond to any of the inbox's filter categories.
+private fun categoryPillStyle(category: NotificationCategory): CategoryPillStyle? = when (category) {
+    NotificationCategory.PERSONAL -> CategoryPillStyle(
+        label = "Personal",
+        textColor = AccentBlue,
+        backgroundColor = AccentBlue.copy(alpha = 0.12f)
+    )
+    NotificationCategory.OTP -> CategoryPillStyle(
+        label = "OTP",
+        textColor = OverlayOtpIndigo,
+        backgroundColor = OverlayOtpIndigo.copy(alpha = 0.14f)
+    )
+    NotificationCategory.OFFER -> CategoryPillStyle(
+        label = "Offer",
+        textColor = OverlayOfferAmber,
+        backgroundColor = OverlayOfferAmber.copy(alpha = 0.16f)
+    )
+    NotificationCategory.TRANSACTION_DEBIT,
+    NotificationCategory.TRANSACTION_CREDIT -> CategoryPillStyle(
+        label = "Transaction",
+        textColor = OverlayCreditGreen,
+        backgroundColor = OverlayCreditGreen.copy(alpha = 0.14f)
+    )
+    NotificationCategory.SERVICE_DEFAULT -> null
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(
     sender: String,
@@ -893,15 +1470,20 @@ fun MessageItem(
     isRead: Boolean,
     isSelected: Boolean,
     isPinned: Boolean,
+    isServiceSender: Boolean,
+    category: NotificationCategory,
+    copyableCode: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 if (isSelected)
-                    Color(0x223E6AE1)
+                    PrimaryBlue.copy(alpha = 0.13f)
                 else
                     Color.Transparent
             )
@@ -918,7 +1500,11 @@ fun MessageItem(
             generateColorFromName(sender)
         }
 
-        // Avatar Circle
+        val initial = sender.trim().firstOrNull()
+        val hasSensibleLetter = initial?.isLetter() == true
+
+        // Avatar Circle - initial-based color for every sender, personal or
+        // service/DLT alike; falls back to an icon when there's no usable letter.
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -927,12 +1513,21 @@ fun MessageItem(
             contentAlignment = Alignment.Center
 
         ) {
-            Text(
-                text = sender.trim().firstOrNull()?.uppercase() ?: "#",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+            if (!isServiceSender || hasSensibleLetter) {
+                Text(
+                    text = initial?.uppercase()?.toString() ?: "#",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Sms,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
 
 
@@ -945,13 +1540,45 @@ fun MessageItem(
                 .padding(vertical = 8.dp)
         ) {
 
-            Text(
-                text = sender,
-                fontSize = 17.sp,
-                fontFamily = GeneralSansSemiBold,
-                fontWeight = if (!isRead) FontWeight.Bold else FontWeight.SemiBold,
-                maxLines = 1
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+
+                Text(
+                    text = sender,
+                    fontSize = 17.sp,
+                    fontFamily = GeneralSansSemiBold,
+                    fontWeight = if (!isRead) FontWeight.Bold else FontWeight.Normal,
+                    color = if (!isRead) Color(0xFF1A1A1A) else Color(0xFF5F6368),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+
+                val pill = categoryPillStyle(category)
+
+                if (pill != null) {
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(pill.backgroundColor)
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = pill.label,
+                            fontSize = 11.sp,
+                            fontFamily = GeneralSansMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = pill.textColor,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(3.dp))
 
@@ -959,7 +1586,8 @@ fun MessageItem(
                 text = message,
                 fontSize = 15.sp,
                 fontFamily = GeneralSansMedium,
-                color = if (!isRead) Color.Black else Color(0xFF5F6368),
+                fontWeight = if (!isRead) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (!isRead) Color(0xFF1A1A1A) else Color(0xFF5F6368),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -967,16 +1595,36 @@ fun MessageItem(
 
         Spacer(modifier = Modifier.width(8.dp))
 
+        // Copy button - only shown when the preview text yields a detected
+        // OTP/reference code (OTP and Transaction categories only).
+        if (copyableCode != null) {
+
+            IconButton(
+                onClick = { copyCodeToClipboard(context, copyableCode) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy code",
+                    tint = PrimaryBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+
         // Time + Unread Dot (RIGHT SIDE)
         Column(
-            horizontalAlignment = Alignment.End
+            horizontalAlignment = Alignment.End,
+            modifier = Modifier.align(Alignment.Top)
         ) {
 
             Text(
                 text = time,
                 fontSize = 13.sp,
                 fontFamily = GeneralSansMedium,
-                color = if (!isRead) Color.Black else Color(0xFF757575)
+                color = Color(0xFF757575)
             )
 
             if (isPinned) {
@@ -987,7 +1635,7 @@ fun MessageItem(
                     painter = painterResource(R.drawable.ic_pin_small),
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = Color(0xFF3E6AE1)
+                    tint = PrimaryBlue
                 )
             }
 
@@ -999,7 +1647,7 @@ fun MessageItem(
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF3E6AE1))
+                        .background(PrimaryBlue)
                 )
             }
         }
@@ -1042,6 +1690,63 @@ fun FilterChipItem(
 // 🔵 NATIVE AD
 ////////////////////////////////////////////////////////
 
+// Binds every asset view a NativeAdView needs registered per AdMob's contract
+// (headline, body, CTA, icon, media) and hides the view for any field that's
+// null on this particular ad, instead of leaving an empty gap or stale text.
+// Called from both `factory` (first bind) and `update` (rebind) below so a
+// freshly-loaded ad on resume actually replaces what's on screen, not just
+// what's held in nativeAdState.
+private fun NativeAdView.bindHomeNativeAd(nativeAd: NativeAd) {
+
+    val headline = findViewById<TextView>(R.id.ad_headline)
+    val body = findViewById<TextView>(R.id.ad_body)
+    val cta = findViewById<Button>(R.id.ad_call_to_action)
+    val icon = findViewById<ImageView>(R.id.ad_icon)
+    val media = findViewById<MediaView>(R.id.ad_media)
+
+    headlineView = headline
+    bodyView = body
+    callToActionView = cta
+    iconView = icon
+    mediaView = media
+
+    headline.text = nativeAd.headline
+
+    val adBody = nativeAd.body
+    if (adBody.isNullOrEmpty()) {
+        body.visibility = View.GONE
+    } else {
+        body.text = adBody
+        body.visibility = View.VISIBLE
+    }
+
+    val adCta = nativeAd.callToAction
+    if (adCta.isNullOrEmpty()) {
+        cta.visibility = View.GONE
+    } else {
+        cta.text = adCta
+        cta.visibility = View.VISIBLE
+    }
+
+    val adIcon = nativeAd.icon
+    if (adIcon == null) {
+        icon.visibility = View.GONE
+    } else {
+        icon.setImageDrawable(adIcon.drawable)
+        icon.visibility = View.VISIBLE
+    }
+
+    val mediaContent = nativeAd.mediaContent
+    if (mediaContent == null) {
+        media.visibility = View.GONE
+    } else {
+        media.mediaContent = mediaContent
+        media.visibility = View.VISIBLE
+    }
+
+    setNativeAd(nativeAd)
+}
+
 @Composable
 fun NativeAdSection(nativeAd: NativeAd?) {
 
@@ -1050,18 +1755,13 @@ fun NativeAdSection(nativeAd: NativeAd?) {
         AndroidView(
             factory = { context ->
                 val inflater = LayoutInflater.from(context)
-                val view =
-                    inflater.inflate(R.layout.native_small_ad_layout, null)
-                val adView = view as NativeAdView
-
-                val headline =
-                    adView.findViewById<TextView>(R.id.ad_headline)
-
-                adView.headlineView = headline
-                headline.text = nativeAd.headline
-
-                adView.setNativeAd(nativeAd)
+                val adView =
+                    inflater.inflate(R.layout.native_small_ad_layout, null) as NativeAdView
+                adView.bindHomeNativeAd(nativeAd)
                 adView
+            },
+            update = { adView ->
+                adView.bindHomeNativeAd(nativeAd)
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -1070,95 +1770,13 @@ fun NativeAdSection(nativeAd: NativeAd?) {
         )
 
     } else {
-        ShimmerNativeAd()
-    }
-}
-
-////////////////////////////////////////////////////////
-// 🔵 NATIVE SIMMER EFFECT
-////////////////////////////////////////////////////////
-
-@Composable
-fun ShimmerNativeAd() {
-
-    val transition = rememberInfiniteTransition(label = "shimmer")
-
-    val xShimmer by transition.animateFloat(
-        initialValue = -400f,
-        targetValue = 1200f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1300, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmerAnim"
-    )
-
-    val brush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFFE0E0E0),
-            Color(0xFFF5F5F5),
-            Color(0xFFE0E0E0)
-        ),
-        start = Offset(xShimmer, 0f),
-        end = Offset(xShimmer + 300f, 0f)
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(100.dp)
-            .padding(horizontal = 12.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFF2F2F2))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-
-        // Ad icon shimmer
-        Box(
+        AdShimmer(
             modifier = Modifier
-                .size(50.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(brush)
+                .fillMaxWidth()
+                .height(100.dp)
+                .padding(horizontal = 12.dp),
+            variant = AdShimmerVariant.COMPACT_ROW
         )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-
-            // Title shimmer
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.7f)
-                    .height(14.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(brush)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Body line 1
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(brush)
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Body line 2
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.8f)
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(brush)
-            )
-        }
     }
 }
 
@@ -1171,13 +1789,86 @@ fun BannerAdSection() {
 
     val bannerView = DefaultBannerAdManager.bannerAdState.value
 
-    bannerView?.let { adView ->
+    if (bannerView != null) {
 
+        // A raw AdView can't be "rebound" in place the way a NativeAdView can
+        // (there's no equivalent of re-setting its content) - a reload always
+        // means a genuinely new AdView instance. factory only runs once per
+        // composition node, so without this stable container + update lambda,
+        // a freshly-loaded banner would silently never replace the stale one
+        // once reload-on-return stops relying on a full Scaffold remount.
         AndroidView(
-            factory = { adView },
+            factory = { context ->
+                FrameLayout(context).apply {
+                    addView(bannerView)
+                }
+            },
+            update = { container ->
+                if (container.getChildAt(0) !== bannerView) {
+                    container.removeAllViews()
+                    container.addView(bannerView)
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp)
+        )
+    } else {
+        AdShimmer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            variant = AdShimmerVariant.BANNER
+        )
+    }
+}
+
+// Same stable-container + update pattern as BannerAdSection, bound to
+// HomeAdManager (home_banner_* keys) instead of DefaultBannerAdManager
+// (default_banner_* keys) - this is the everyday inbox screen's banner,
+// kept separate from DefaultUI's since InboxUI's visibility gate already
+// uses RemoteConfigManager.homeBannerEnabled().
+@Composable
+fun HomeBannerAdSection() {
+
+    val bannerView = HomeAdManager.bannerAdState.value
+
+    if (bannerView != null) {
+
+        AndroidView(
+            factory = { context ->
+                FrameLayout(context).apply {
+                    addView(bannerView)
+                }
+            },
+            update = { container ->
+                if (container.getChildAt(0) !== bannerView) {
+                    container.removeAllViews()
+                    container.addView(bannerView)
+                }
+            },
+            onRelease = { container ->
+                // InboxUI's Scaffold subtree (this composable included) is torn
+                // down and later remounted whenever a chat is opened/closed.
+                // HomeAdManager.bannerAdState is a singleton that survives that
+                // teardown, so without this, the same AdView instance can come
+                // back still attached to this now-discarded container - the next
+                // factory's addView() on it would then crash with "The specified
+                // child already has a parent." Detaching here (not destroying;
+                // the AdView itself is HomeAdManager's to destroy) keeps it
+                // reusable the moment this container is released.
+                container.removeAllViews()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+        )
+    } else {
+        AdShimmer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            variant = AdShimmerVariant.BANNER
         )
     }
 }
@@ -1194,6 +1885,10 @@ private fun isDefaultSmsApp(context: Context): Boolean {
     return false
 }
 
+private val FMT_TIME = SimpleDateFormat("hh:mm a", Locale.getDefault())
+private val FMT_DAY  = SimpleDateFormat("EEE",     Locale.getDefault())
+private val FMT_DATE = SimpleDateFormat("dd MMM",  Locale.getDefault())
+
 private fun formatMessageDate(timestamp: Long): String {
 
     val messageDate = Date(timestamp)
@@ -1207,24 +1902,14 @@ private fun formatMessageDate(timestamp: Long): String {
     calendarMsg.time = messageDate
 
     return when {
-        isSameDay(calendarNow, calendarMsg) -> {
-            SimpleDateFormat("hh:mm a", Locale.getDefault())
-                .format(messageDate)
-        }
+        isSameDay(calendarNow, calendarMsg) -> FMT_TIME.format(messageDate)
 
-        diff < oneDay * 2 && calendarNow.get(Calendar.DAY_OF_YEAR) - calendarMsg.get(Calendar.DAY_OF_YEAR) == 1 -> {
+        diff < oneDay * 2 && calendarNow.get(Calendar.DAY_OF_YEAR) - calendarMsg.get(Calendar.DAY_OF_YEAR) == 1 ->
             "Yesterday"
-        }
 
-        diff < oneDay * 7 -> {
-            SimpleDateFormat("EEE", Locale.getDefault())
-                .format(messageDate) // Mon, Tue
-        }
+        diff < oneDay * 7 -> FMT_DAY.format(messageDate)
 
-        else -> {
-            SimpleDateFormat("dd MMM", Locale.getDefault())
-                .format(messageDate) // 12 Jan
-        }
+        else -> FMT_DATE.format(messageDate)
     }
 }
 
@@ -1243,31 +1928,16 @@ private fun filterMessages(
         "Personal" -> {
 
             list.filter { thread ->
-
-                val sender = thread.phone
-
-                // If sender contains letters → service SMS
-                val isServiceSender = sender.any { it.isLetter() }
-
-                !isServiceSender
+                !isServiceSenderPhone(thread.phone)
             }
         }
 
         "Transaction" -> {
-            list.filter {
-                it.lastMessage.contains("debited", true) ||
-                        it.lastMessage.contains("credited", true) ||
-                        it.lastMessage.contains("transaction", true) ||
-                        it.lastMessage.contains("payment", true)
-            }
+            list.filter { isTransactionMessage(it.lastMessage) }
         }
 
         "OTPs" -> {
-            list.filter {
-                it.lastMessage.contains("otp", true) ||
-                        it.lastMessage.contains("verification code", true) ||
-                        it.lastMessage.contains("one time password", true)
-            }
+            list.filter { isOtpMessage(it.lastMessage) }
         }
 
         "Offers" -> {
@@ -1283,7 +1953,53 @@ private fun filterMessages(
     }
 }
 
-private fun generateColorFromName(name: String): Color {
+// A phone containing letters is a service/DLT sender ID (e.g. "VM-HDFCBK"),
+// never a real dialable personal number.
+private fun isServiceSenderPhone(phone: String): Boolean {
+    return phone.any { it.isLetter() }
+}
+
+private fun isTransactionMessage(text: String): Boolean {
+    return text.contains("debited", true) ||
+            text.contains("credited", true) ||
+            text.contains("transaction", true) ||
+            text.contains("payment", true)
+}
+
+private fun isOtpMessage(text: String): Boolean {
+    return text.contains("otp", true) ||
+            text.contains("verification code", true) ||
+            text.contains("one time password", true)
+}
+
+// Matches a standalone 4-8 digit code, e.g. the "482913" in "482913 is your OTP".
+private val otpCodeRegex = Regex("""\b\d{4,8}\b""")
+
+// Matches a labelled alphanumeric reference/UTR/txn id, capturing the value only.
+private val referenceCodeRegex = Regex(
+    """(?:ref(?:erence)?\.?\s*(?:no\.?|number|id)?|utr|txn\s*id|transaction\s*id)\s*[:\-]?\s*([A-Za-z0-9]{6,})""",
+    RegexOption.IGNORE_CASE
+)
+
+// Only OTP and Transaction messages carry a copyable code; Personal/Offers never do.
+// Public so the chat screen (ChatScreen.kt) can reuse the same detection logic.
+fun extractCopyableCode(message: String): String? {
+    return when {
+        isOtpMessage(message) -> otpCodeRegex.find(message)?.value
+        isTransactionMessage(message) -> referenceCodeRegex.find(message)?.groupValues?.getOrNull(1)
+        else -> null
+    }
+}
+
+// Shared clipboard-copy + confirmation, reused by both the inbox row Copy
+// button and the chat bubble Copy button so the behavior stays identical.
+fun copyCodeToClipboard(context: Context, code: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("Code", code))
+    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+}
+
+fun generateColorFromName(name: String): Color {
 
     val colors = listOf(
         Color(0xFF3E6AE1),
@@ -1319,31 +2035,31 @@ private fun markMessagesAsRead(context: Context, sender: String) {
     context.sendBroadcast(Intent("SMS_INBOX_UPDATED"))
 }
 
-fun deleteMessages(context: Context, ids: Set<Long>) {
+fun deleteMessages(context: Context, threadIds: Set<Long>) {
 
-    ids.forEach { id ->
+    threadIds.forEach { threadId ->
 
         context.contentResolver.delete(
             android.provider.Telephony.Sms.CONTENT_URI,
-            "date = ?",
-            arrayOf(id.toString())
+            "thread_id = ?",
+            arrayOf(threadId.toString())
         )
     }
 }
 
-fun markSelectedAsRead(context: Context, ids: Set<Long>) {
+fun markSelectedAsRead(context: Context, threadIds: Set<Long>) {
 
     val values = android.content.ContentValues().apply {
         put(android.provider.Telephony.Sms.READ, 1)
     }
 
-    ids.forEach { id ->
+    threadIds.forEach { threadId ->
 
         context.contentResolver.update(
             android.provider.Telephony.Sms.CONTENT_URI,
             values,
-            "date = ?",
-            arrayOf(id.toString())
+            "thread_id = ? AND read = 0",
+            arrayOf(threadId.toString())
         )
     }
 }

@@ -45,10 +45,12 @@ object SettingsAdManager {
                 object : FullScreenContentCallback() {
 
                     override fun onAdDismissedFullScreenContent() {
+                        App.disableAppOpenAd = false
                         onFinish()
                     }
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        App.disableAppOpenAd = false
                         onFinish()
                     }
                 }

@@ -59,7 +59,7 @@ fun NewConversationScreen(
                         text = "New Conversation",
                         color = Color.White,
                         fontSize = 20.sp,
-                        fontFamily = FontFamily(Font(R.font.general_sans_semibold))
+                        fontFamily = FontFamily(Font(R.font.general_sans_bold))
                     )
                 },
 

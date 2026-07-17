@@ -49,7 +49,7 @@ object GetStartedAdManager {
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
 
-                    Log.d("ADS", "GetStarted Native Failed: ${error.message}")
+                    Log.d("ADS", "GetStarted Native Failed: code=${error.code} domain=${error.domain} message=${error.message}")
 
                     nativeAdState = null
                 }

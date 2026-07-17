@@ -18,6 +18,12 @@ object ChatBannerAdManager {
 
     private var currentAdView: AdView? = null
 
+    // Blocks a second concurrent load while one is already in flight - does
+    // NOT block future reloads once a load succeeds (that used to be
+    // `if (currentAdView != null) return`, which made every loadBanner() call
+    // after the first a permanent no-op for the rest of the process).
+    private var isLoading = false
+
     fun loadBanner(activity: Activity) {
 
         // 🔥 Check if enabled from RemoteConfig
@@ -35,8 +41,15 @@ object ChatBannerAdManager {
             return
         }
 
-        // Prevent multiple banner creation
-        if (currentAdView != null) return
+        if (isLoading) return
+
+        // Reload means destroy old, then load new - not load new alongside
+        // old, and not refuse to load new.
+        if (currentAdView != null) {
+            destroyBanner()
+        }
+
+        isLoading = true
 
         val adView = AdView(activity)
         adView.setAdSize(AdSize.BANNER)
@@ -46,12 +59,14 @@ object ChatBannerAdManager {
 
             override fun onAdLoaded() {
                 Log.d(TAG, "Chat banner loaded")
+                isLoading = false
                 currentAdView = adView
                 bannerAdState.value = adView
             }
 
             override fun onAdFailedToLoad(error: LoadAdError) {
-                Log.d(TAG, "Chat banner failed: ${error.message}")
+                Log.d(TAG, "Chat banner failed: code=${error.code} domain=${error.domain} message=${error.message}")
+                isLoading = false
                 bannerAdState.value = null
             }
         }

@@ -5,7 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.lifecycle.lifecycleScope
+import androidx.compose.animation.core.Animatable
 import com.sms.textmessages.messenger.App
 import com.sms.textmessages.messenger.MainActivity
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
@@ -13,10 +13,17 @@ import com.sms.textmessages.messenger.ads.SplashAdManager
 import com.sms.textmessages.messenger.ui.onboarding.GetStartedActivity
 import com.sms.textmessages.messenger.utils.LocaleManager
 import com.sms.textmessages.messenger.utils.PreferenceManager
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class SplashActivity : ComponentActivity() {
+
+    // Single source of truth for splash timing. animateTo() on this instance
+    // must run inside a Composable (it needs Compose's MonotonicFrameClock,
+    // which a plain Activity coroutine scope does not have) - see
+    // SplashScreenUI's LaunchedEffect. This still drives both the progress
+    // bar's visual state and the real dismiss point: the LaunchedEffect
+    // awaits animateTo() and then reports back via onProgressComplete, so
+    // there remains exactly one Animatable / one timer, not two.
+    private val splashProgress = Animatable(0f)
 
     override fun attachBaseContext(newBase: Context) {
 
@@ -50,7 +57,10 @@ class SplashActivity : ComponentActivity() {
         }
 
         setContent {
-            SplashScreenUI()
+            SplashScreenUI(
+                progress = splashProgress,
+                onProgressComplete = { onSplashProgressComplete() }
+            )
         }
 
         startSplashLogic()
@@ -59,24 +69,25 @@ class SplashActivity : ComponentActivity() {
     private fun startSplashLogic() {
 
         RemoteConfigManager.init {
-
             SplashAdManager.loadAds(this)
-
-            lifecycleScope.launch {
-
-                delay(4000)
-
-                SplashAdManager.showAdIfAvailable(
-                    activity = this@SplashActivity,
-                    onAdDismissed = {
-                        goToHome()
-                    },
-                    onAdFailed = {
-                        goToHome()
-                    }
-                )
-            }
         }
+    }
+
+    // Called from SplashScreenUI's LaunchedEffect once splashProgress's
+    // animateTo() finishes - the progress bar reaching 100% is what gates
+    // showing/skipping the ad, same as before the crash fix, just signaled
+    // back from Compose instead of being awaited directly in this class.
+    private fun onSplashProgressComplete() {
+
+        SplashAdManager.showAdIfAvailable(
+            activity = this,
+            onAdDismissed = {
+                goToHome()
+            },
+            onAdFailed = {
+                goToHome()
+            }
+        )
     }
 
     private fun goToHome() {

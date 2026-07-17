@@ -23,7 +23,9 @@ import androidx.compose.ui.text.font.FontWeight
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenArchived: () -> Unit = {},
+    onOpenBlocked: () -> Unit = {}
 ) {
 
     val context = LocalContext.current
@@ -163,6 +165,26 @@ fun SettingsScreen(
 
                 dialog.show()
             }
+
+            Text(
+                text = "Privacy",
+                fontSize = 13.sp,
+                fontFamily = GeneralSansSemiBold,
+                color = Color.Gray,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+            )
+
+            SettingsItem(
+                icon = R.drawable.ic_archive,
+                text = "Archived conversations",
+                onClick = onOpenArchived
+            )
+
+            SettingsItem(
+                icon = R.drawable.ic_block,
+                text = "Blocked numbers",
+                onClick = onOpenBlocked
+            )
         }
     }
 }
@@ -217,5 +239,5 @@ fun SettingsItem(
 }
 
 private val GeneralSansSemiBold = FontFamily(
-    Font(R.font.general_sans_semibold, FontWeight.SemiBold)
+    Font(R.font.general_sans_bold, FontWeight.SemiBold)
 )

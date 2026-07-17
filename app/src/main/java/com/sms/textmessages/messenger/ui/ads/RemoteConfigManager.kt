@@ -59,9 +59,19 @@ object RemoteConfigManager {
             "new_chat_interstitial_enabled" to true,
             "new_chat_click_limit" to 2,
 
-            // ================= Notification Ads =================
-            "notification_ads_enabled" to false,
-            "notification_native_id" to ""
+            // ================= Chat Banner =================
+            "chat_banner_ad_id" to "",
+            "chat_banner_enabled" to true,
+
+            // ================= Chat Back Click =================
+            "chat_back_interstitial_id" to "",
+            "chat_back_interstitial_enabled" to true,
+            "chat_back_click_limit" to 3L,
+
+            // ================= Open Chat Click =================
+            "open_chat_interstitial_id" to "",
+            "open_chat_interstitial_enabled" to true,
+            "open_chat_click_limit" to 3L
 
         )
 
@@ -182,12 +192,4 @@ object RemoteConfigManager {
         return remoteConfig.getLong("open_chat_click_limit").toInt()
     }
 
-    fun notificationAdEnabled(): Boolean {
-        return remoteConfig.getBoolean("notification_ads_enabled")
-    }
-
-    fun notificationNativeId(): String {
-        return remoteConfig.getString("notification_native_id")
-    }
-    
 }

@@ -19,5 +19,8 @@ data class ThreadEntity(
     val phone: String,
     val lastMessage: String,
     val date: Long,
-    val isRead: Boolean
+    val isRead: Boolean,
+    val archived: Boolean = false,
+    val blocked: Boolean = false,
+    val pinned: Boolean = false
 )

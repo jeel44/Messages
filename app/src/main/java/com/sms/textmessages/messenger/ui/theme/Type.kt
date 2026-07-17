@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.sp
 import com.sms.textmessages.messenger.R
 
 val GeneralSans = FontFamily(
-    Font(R.font.general_sans_semibold, FontWeight.SemiBold)
+    Font(R.font.general_sans_bold, FontWeight.SemiBold)
 )
 
 val AppTypography = Typography(
