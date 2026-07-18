@@ -13,6 +13,7 @@ object PreferenceManager {
     private const val KEY_REACTION_PREFIX = "reaction_"
     private const val KEY_BLOCKED_IMPORT_DONE = "blocked_import_done"
     private const val KEY_ARCHIVE_SUGGESTION_CHECKED = "archive_suggestion_checked"
+    private const val KEY_CALL_END_ENABLED = "call_end_enabled"
 
     fun isFirstLaunch(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -138,5 +139,15 @@ object PreferenceManager {
     fun setArchiveSuggestionChecked(context: Context) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_ARCHIVE_SUGGESTION_CHECKED, true).apply()
+    }
+
+    fun isCallEndEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_CALL_END_ENABLED, true)
+    }
+
+    fun setCallEndEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_CALL_END_ENABLED, enabled).apply()
     }
 }

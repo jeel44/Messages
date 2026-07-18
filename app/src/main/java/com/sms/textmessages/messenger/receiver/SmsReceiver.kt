@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
-import com.sms.textmessages.messenger.ui.overlay.CategoryOverlayService
+import com.sms.textmessages.messenger.service.OverlayHostService
 import com.sms.textmessages.messenger.utils.PreferenceManager
 import kotlinx.coroutines.*
 
@@ -125,6 +125,6 @@ class SmsReceiver : BroadcastReceiver() {
         val category = classifyNotification(sender, message)
         val notificationId = sender.hashCode()
 
-        CategoryOverlayService.start(context, category, sender, message, notificationId)
+        OverlayHostService.showCategoryOverlay(context, category, sender, message, notificationId)
     }
 }

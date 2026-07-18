@@ -11,7 +11,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
-import com.sms.textmessages.messenger.receiver.CallStateListener
 import com.sms.textmessages.messenger.ui.navigation.AppNavigation
 import com.sms.textmessages.messenger.utils.OverlayPermission
 
@@ -56,16 +55,34 @@ class MainActivity : ComponentActivity() {
     private val smsRoleLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
-    // Drives CallStateListener (post-call overlay) - requested here rather
-    // than bundled into requestSmsPermissions() since it's functionally
-    // unrelated (telephony state, not SMS content) even though both fire at
-    // startup. App.onCreate already tried CallStateListener.register() once
-    // (a no-op pre-grant); registering again on grant activates it
-    // immediately instead of waiting for the next process start.
+    // READ_PHONE_STATE for CallStateListener, the manifest-declared receiver
+    // that drives the post-call overlay - requested here rather than bundled
+    // into requestSmsPermissions() since it's functionally unrelated
+    // (telephony state, not SMS content) even though both fire at startup.
+    // No re-registration needed on grant: CallStateListener is a manifest
+    // receiver, so it's active as soon as the permission is held.
     private val phoneStatePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                CallStateListener.register(this)
+                println("READ_PHONE_STATE GRANTED")
+            } else {
+                println("READ_PHONE_STATE DENIED")
+            }
+        }
+
+    // READ_CALL_LOG - fallback source CallStateListener uses to resolve the
+    // caller's number for an answered incoming call when the PHONE_STATE
+    // broadcast's incoming_number extra comes back blank (the normal case on
+    // API 29+ without this permission). Same launcher style and no
+    // re-registration needed on grant, for the same reason as
+    // phoneStatePermissionLauncher above: CallStateListener is a manifest
+    // receiver, it just checks this permission fresh on every call.
+    private val callLogPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                println("READ_CALL_LOG GRANTED")
+            } else {
+                println("READ_CALL_LOG DENIED")
             }
         }
 
@@ -79,6 +96,7 @@ class MainActivity : ComponentActivity() {
         requestContactsPermission()
         requestNotificationPermission()
         requestPhoneStatePermission()
+        requestCallLogPermission()
         requestDefaultRole()
         requestOverlayPermission()
 
@@ -165,6 +183,17 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+        }
+    }
+
+    private fun requestCallLogPermission() {
+
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CALL_LOG
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            callLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
         }
     }
 

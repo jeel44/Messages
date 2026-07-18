@@ -24,26 +24,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sms.textmessages.messenger.R
+import com.sms.textmessages.messenger.ui.common.AppSwitch
 import com.sms.textmessages.messenger.ui.home.SmsRepository
 import com.sms.textmessages.messenger.ui.home.generateColorFromName
+import com.sms.textmessages.messenger.ui.theme.GeneralSans
 import com.sms.textmessages.messenger.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private val GeneralSansSemiBold = FontFamily(
-    Font(R.font.general_sans_bold, FontWeight.SemiBold)
-)
-
-private val GeneralSansMedium = FontFamily(
-    Font(R.font.general_sans_medium, FontWeight.Medium)
-)
 
 private val AccentBlue = Color(0xFF3E6AE1)
 
@@ -76,7 +68,8 @@ fun ContactInfoScreen(
                     Text(
                         text = "Contact info",
                         fontSize = 20.sp,
-                        fontFamily = GeneralSansSemiBold,
+                        fontFamily = GeneralSans,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 },
@@ -132,7 +125,8 @@ fun ContactInfoScreen(
                     Text(
                         text = contactName.trim().firstOrNull()?.uppercase() ?: "#",
                         fontSize = 28.sp,
-                        fontFamily = GeneralSansSemiBold,
+                        fontFamily = GeneralSans,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
@@ -142,7 +136,8 @@ fun ContactInfoScreen(
                 Text(
                     text = contactName,
                     fontSize = 20.sp,
-                    fontFamily = GeneralSansSemiBold,
+                    fontFamily = GeneralSans,
+                    fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
 
@@ -151,7 +146,8 @@ fun ContactInfoScreen(
                 Text(
                     text = phoneNumber,
                     fontSize = 13.sp,
-                    fontFamily = GeneralSansMedium,
+                    fontFamily = GeneralSans,
+                    fontWeight = FontWeight.Normal,
                     color = Color.Gray
                 )
             }
@@ -212,15 +208,12 @@ fun ContactInfoScreen(
                     icon = Icons.Default.Notifications,
                     text = "Notifications",
                     trailing = {
-                        Switch(
+                        AppSwitch(
                             checked = notificationsEnabled,
                             onCheckedChange = { enabled ->
                                 notificationsEnabled = enabled
                                 PreferenceManager.setNotificationsMuted(context, phoneNumber, !enabled)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = AccentBlue
-                            )
+                            }
                         )
                     },
                     onClick = {
@@ -342,7 +335,8 @@ private fun ContactInfoRow(
         Text(
             text = text,
             fontSize = 16.sp,
-            fontFamily = GeneralSansSemiBold,
+            fontFamily = GeneralSans,
+            fontWeight = FontWeight.Medium,
             color = textColor,
             modifier = Modifier.weight(1f)
         )
