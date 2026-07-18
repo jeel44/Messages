@@ -71,7 +71,11 @@ object RemoteConfigManager {
             // ================= Open Chat Click =================
             "open_chat_interstitial_id" to "",
             "open_chat_interstitial_enabled" to true,
-            "open_chat_click_limit" to 3L
+            "open_chat_click_limit" to 3L,
+
+            // ================= CALL END =================
+            "call_end_ad_id" to "",
+            "call_end_ads_enabled" to true
 
         )
 
@@ -191,5 +195,13 @@ object RemoteConfigManager {
     fun openChatClickLimit(): Int {
         return remoteConfig.getLong("open_chat_click_limit").toInt()
     }
+
+    // ================= CALL END =================
+
+    fun callEndNativeId() =
+        remoteConfig.getString("call_end_ad_id")
+
+    fun callEndAdsEnabled() =
+        remoteConfig.getBoolean("call_end_ads_enabled")
 
 }

@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "682623659533",
-    "project_id": "messages-79427",
-    "storage_bucket": "messages-79427.firebasestorage.app"
+    "project_number": "550127299497",
+    "project_id": "messages-6ac03",
+    "storage_bucket": "messages-6ac03.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:682623659533:android:84e6b38bedb4513f336f44",
+        "mobilesdk_app_id": "1:550127299497:android:22bb822f2648bac871f2b8",
         "android_client_info": {
           "package_name": "com.sms.textmessages.messenger"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCf43-E_C8SGW2h-fbLCQHt1bDsviWH9BU"
+          "current_key": "AIzaSyBIQxtoU5RJKhp30N49CLJhjy9eMcsTyPM"
         }
       ],
       "services": {

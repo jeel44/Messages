@@ -3,6 +3,7 @@ package com.sms.textmessages.messenger
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import com.sms.textmessages.messenger.receiver.CallStateListener
 import com.sms.textmessages.messenger.ui.ads.HomeAdManager
 import com.sms.textmessages.messenger.ui.splash.SplashActivity
 
@@ -22,6 +23,11 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
 
         // preload app open
         HomeAdManager.loadAppOpen(this)
+
+        // Best-effort here (covers subsequent launches once READ_PHONE_STATE
+        // is already granted) - re-called from MainActivity right after the
+        // runtime grant on first launch, since this runs before that prompt.
+        CallStateListener.register(this)
     }
 
     override fun onActivityStarted(activity: Activity) {

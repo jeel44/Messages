@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
+import com.sms.textmessages.messenger.receiver.CallStateListener
 import com.sms.textmessages.messenger.ui.navigation.AppNavigation
 import com.sms.textmessages.messenger.utils.OverlayPermission
 
@@ -55,7 +56,18 @@ class MainActivity : ComponentActivity() {
     private val smsRoleLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
-
+    // Drives CallStateListener (post-call overlay) - requested here rather
+    // than bundled into requestSmsPermissions() since it's functionally
+    // unrelated (telephony state, not SMS content) even though both fire at
+    // startup. App.onCreate already tried CallStateListener.register() once
+    // (a no-op pre-grant); registering again on grant activates it
+    // immediately instead of waiting for the next process start.
+    private val phoneStatePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                CallStateListener.register(this)
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +78,7 @@ class MainActivity : ComponentActivity() {
         requestSmsPermissions()
         requestContactsPermission()
         requestNotificationPermission()
+        requestPhoneStatePermission()
         requestDefaultRole()
         requestOverlayPermission()
 
@@ -141,6 +154,17 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.POST_NOTIFICATIONS
                 )
             }
+        }
+    }
+
+    private fun requestPhoneStatePermission() {
+
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_PHONE_STATE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
         }
     }
 
