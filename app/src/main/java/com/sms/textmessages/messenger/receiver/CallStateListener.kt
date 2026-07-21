@@ -9,7 +9,7 @@ import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.sms.textmessages.messenger.service.OverlayHostService
+import com.sms.textmessages.messenger.ui.overlay.CallEndOverlayManager
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
 enum class CallEndType { INCOMING, OUTGOING, MISSED }
@@ -230,23 +230,24 @@ class CallStateListener : BroadcastReceiver() {
                                 "- showing call end overlay"
                         )
 
-                        // Routes into OverlayHostService, the persistent
-                        // foreground service started from App.onCreate() (or
-                        // BootCompletedReceiver after a reboot) - it's already
-                        // running by the time this broadcast ever fires, so
-                        // this only redelivers onStartCommand() to the
-                        // existing instance rather than starting a new
-                        // foreground service from this (non-exempted)
-                        // broadcast receiver. Still wrapped and logged in
-                        // full: a WindowManager BadTokenException or similar
-                        // downstream in CallEndOverlayManager.show() should
-                        // not fail silently.
+                        // Draws the overlay directly, right here, inside this
+                        // receiver's onReceive() - no Service involved. This
+                        // rides the OS's short post-broadcast priority window
+                        // (the same window Calldorado's real SDK relies on -
+                        // their public integration guide shows only a plain
+                        // PHONE_STATE receiver, no service) rather than trying
+                        // to guarantee the process survives afterward. If the
+                        // process gets reclaimed before addView() runs below,
+                        // there's no recovery - expected on some OEMs, not a
+                        // bug to chase. Still wrapped and logged in full: a
+                        // WindowManager BadTokenException or similar inside
+                        // CallEndOverlayManager.show() should not fail silently.
                         try {
-                            OverlayHostService.showCallEndOverlay(context, type, resolvedNumber, durationMs)
+                            CallEndOverlayManager.show(context, type, resolvedNumber, durationMs)
                         } catch (e: Exception) {
                             Log.e(
                                 TAG,
-                                "Call ended -> OverlayHostService.showCallEndOverlay() threw ${e.javaClass.name}: ${e.message}",
+                                "Call ended -> CallEndOverlayManager.show() threw ${e.javaClass.name}: ${e.message}",
                                 e
                             )
                         }

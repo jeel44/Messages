@@ -20,9 +20,6 @@
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH"/>
     <uses-permission android:name="android.permission.READ_CELL_BROADCASTS"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
     <application
         android:name=".App"
@@ -124,24 +121,6 @@
 
         </receiver>
 
-        <!-- ================= BOOT RECEIVER ================= -->
-
-        <!-- Restarts OverlayHostService after a reboot - a foreground service
-             does not survive a reboot on its own, and BOOT_COMPLETED is itself
-             one of the broadcasts exempt from Android 12+'s
-             cannot-start-a-foreground-service-from-the-background restriction,
-             so it is safe to (re)start the service here before the user has
-             opened the app. -->
-        <receiver
-            android:name=".receiver.BootCompletedReceiver"
-            android:exported="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-            </intent-filter>
-
-        </receiver>
-
         <!-- ================= NOTIFICATION ACTION RECEIVERS ================= -->
 
         <receiver
@@ -202,27 +181,17 @@
 
         </service>
 
-        <!-- ================= OVERLAY HOST SERVICE ================= -->
+        <!-- ================= CATEGORY OVERLAY SERVICE ================= -->
 
-        <!-- Single persistent foreground service both the call-end overlay
-             (CallEndOverlayManager) and the SMS category overlay
-             (CategoryOverlayManager) attach to. Being foregrounded is what
-             protects this process from the OOM killer while a
-             WindowManager overlay is being built/shown - a plain
-             BroadcastReceiver.onReceive() or an un-foregrounded background
-             Service does not. specialUse is the only foreground-service type
-             that fits: this service isn't tied to camera/location/
-             mediaPlayback/dataSync/phoneCall/etc. -->
+        <!-- Plain (never foregrounded) service the SMS category overlay
+             (CategoryOverlayService) runs from, started via
+             context.startService() from SmsReceiver. Only needed to host the
+             ComposeView's Lifecycle/SavedStateRegistry/ViewModelStore and to
+             outlive the SMS_DELIVER broadcast long enough to show/auto-dismiss
+             the card - not a persistent/foreground component. -->
         <service
-            android:name=".service.OverlayHostService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Keeps the app alive so call-end and message overlays can be shown reliably"/>
-
-        </service>
+            android:name=".ui.overlay.CategoryOverlayService"
+            android:exported="false"/>
 
     </application>
 

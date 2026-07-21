@@ -20,13 +20,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistry
+import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.sms.textmessages.messenger.MainActivity
 import com.sms.textmessages.messenger.data.db.AppDatabase
 import com.sms.textmessages.messenger.receiver.CallEndType
-import com.sms.textmessages.messenger.service.OverlayHostService
 import com.sms.textmessages.messenger.ui.ads.CallEndAdManager
 import com.sms.textmessages.messenger.ui.home.SmsRepository
 import com.sms.textmessages.messenger.ui.home.getContactName
@@ -35,26 +42,30 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-// Hosts the post-call overlay's show()/dismiss() logic, driven by
-// OverlayHostService - the one persistent foreground service both this and
-// CategoryOverlayManager attach to. OverlayHostService.onStartCommand()
-// calls show() below, passing itself as the Context/LifecycleOwner/
-// SavedStateRegistryOwner/ViewModelStoreOwner the ComposeView needs, so
-// there's no manual lifecycle to drive by hand here anymore (that used to
-// be OverlayLifecycleOwner, a stand-in needed only because the old
-// architecture had no Service to provide those for free).
+// Hosts the post-call overlay's show()/dismiss() logic. Called directly from
+// CallStateListener.onReceive() - no Service involved at all, matching
+// Calldorado's actual architecture (confirmed via their public integration
+// guide: a plain manifest PHONE_STATE receiver, no service). Adding a
+// SYSTEM_ALERT_WINDOW overlay only needs that permission at call time, not a
+// running component to host it from - the addView() call below happens
+// synchronously inside the receiver's execution context, riding the OS's
+// short post-broadcast priority window rather than trying to guarantee the
+// process stays alive afterward.
 //
-// This previously called WindowManager.addView() directly from
-// CallStateListener.onReceive() with no Service involved at all, because
-// starting a foreground Service from that broadcast was itself rejected:
-// android.intent.action.PHONE_STATE is not on the small allowlist of
-// broadcasts exempt from Android 12+'s "can't start a foreground service
-// from a background broadcast receiver" restriction. That's still true, but
-// no longer matters - OverlayHostService is never started fresh from
-// CallStateListener's receiver. It's already running (started from a
-// foreground context), so CallStateListener only ever redelivers into an
-// existing, already-foregrounded service instance, which isn't subject to
-// that restriction. See OverlayHostService.showCallEndOverlay().
+// This used to be routed through OverlayHostService, a persistent foreground
+// service both this and CategoryOverlayService attached to, kept alive
+// indefinitely via startForeground() from App.onCreate()/BootCompletedReceiver
+// so it would already exist by the time a PHONE_STATE broadcast fired
+// (PHONE_STATE isn't itself exempt from Android 12+'s can't-start-a-
+// foreground-service-from-a-background-broadcast restriction, so
+// CallStateListener could never start it fresh). That fixed the immediate
+// symptom (the process dying mid-overlay) but did so by keeping the whole
+// app process running all the time, which isn't what a call-end overlay
+// actually needs and isn't how Calldorado does it - reverted in favor of
+// this direct-draw approach. See CALLEND_DEBUG logs for how often the
+// process is still alive by the time this runs vs. reclaimed first; a miss
+// here is an accepted platform limitation (see the note in show() below),
+// not something this migration tries to work around.
 object CallEndOverlayManager {
 
     private const val TAG = "CALLEND_DEBUG"
@@ -63,6 +74,7 @@ object CallEndOverlayManager {
 
     private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
+    private var lifecycleOwner: OverlayLifecycleOwner? = null
 
     // Dynamically registered (never manifest-declared - ACTION_CLOSE_SYSTEM_DIALOGS
     // is restricted to dynamic receivers since Android 12) while the overlay is
@@ -74,9 +86,46 @@ object CallEndOverlayManager {
     private var closeSystemDialogsReceiver: BroadcastReceiver? = null
     private var registeredReceiverContext: Context? = null
 
-    fun show(service: OverlayHostService, callType: CallEndType, phoneNumber: String?, durationMs: Long) {
+    // Minimal stand-in for the Lifecycle/SavedStateRegistry/ViewModelStore an
+    // Activity or Service would otherwise provide for free - needed because
+    // ComposeView requires all three of ViewTreeLifecycleOwner,
+    // ViewTreeSavedStateRegistryOwner and ViewTreeViewModelStoreOwner to be
+    // set, and there is deliberately no Service here to supply them. A fresh
+    // instance is created per show() and moved straight to DESTROYED in
+    // teardown() rather than reused - a Lifecycle can't leave DESTROYED once
+    // it gets there, so reuse across show/dismiss cycles isn't an option.
+    private class OverlayLifecycleOwner : LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
+        private val lifecycleRegistry = LifecycleRegistry(this)
+        private val savedStateRegistryController = SavedStateRegistryController.create(this)
 
-        val canDraw = OverlayPermission.canDrawOverlays(service)
+        override val lifecycle: Lifecycle get() = lifecycleRegistry
+        override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
+        override val viewModelStore = ViewModelStore()
+
+        fun start() {
+            savedStateRegistryController.performRestore(null)
+            lifecycleRegistry.currentState = Lifecycle.State.CREATED
+            lifecycleRegistry.currentState = Lifecycle.State.STARTED
+            lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        }
+
+        fun destroy() {
+            lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+            viewModelStore.clear()
+        }
+    }
+
+    // context here is CallStateListener's receiver context (applicationContext
+    // by the time it reaches this call) - see CallStateListener.handleState().
+    // Known limitation, logged rather than worked around: if the OS reclaims
+    // this process before addView() below runs, there is no recovery and no
+    // overlay shows. That's expected on some OEMs under aggressive process
+    // killing and is an accepted tradeoff of not running a keep-alive
+    // service, not a bug - do not add WorkManager/AlarmManager/JobScheduler
+    // polling to chase it.
+    fun show(context: Context, callType: CallEndType, phoneNumber: String?, durationMs: Long) {
+
+        val canDraw = OverlayPermission.canDrawOverlays(context)
         val numberDesc = describeNumber(phoneNumber)
         Log.d(TAG, "show(): canDrawOverlays()=$canDraw callType=$callType phoneNumber=$numberDesc durationMs=$durationMs")
 
@@ -86,17 +135,20 @@ object CallEndOverlayManager {
         }
 
         teardown()
-        showOverlay(service, callType, phoneNumber, durationMs)
+        showOverlay(context, callType, phoneNumber, durationMs)
     }
 
     private fun describeNumber(number: String?): String = number?.ifEmpty { "empty" } ?: "null"
 
-    private fun showOverlay(service: OverlayHostService, callType: CallEndType, phoneNumber: String?, durationMs: Long) {
+    private fun showOverlay(context: Context, callType: CallEndType, phoneNumber: String?, durationMs: Long) {
 
-        val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = wm
 
-        val contactLookupResult = phoneNumber?.let { getContactName(service, it) }
+        val owner = OverlayLifecycleOwner().also { it.start() }
+        lifecycleOwner = owner
+
+        val contactLookupResult = phoneNumber?.let { getContactName(context, it) }
         val resolvedContactName = contactLookupResult?.takeIf { it.isNotBlank() }
         val displayName = resolvedContactName ?: phoneNumber ?: "Unknown"
 
@@ -107,21 +159,20 @@ object CallEndOverlayManager {
                 "displayName=$displayName"
         )
 
-        CallEndAdManager.loadNative(service)
+        CallEndAdManager.loadNative(context)
 
         val unreadCountState = mutableStateOf<Int?>(null)
         ownerScope.launch {
-            unreadCountState.value = AppDatabase.getDatabase(service).threadDao().getUnreadThreadCount()
+            unreadCountState.value = AppDatabase.getDatabase(context).threadDao().getUnreadThreadCount()
         }
 
-        val composeView = ComposeView(service).apply {
-            setViewTreeLifecycleOwner(service)
-            setViewTreeSavedStateRegistryOwner(service)
-            setViewTreeViewModelStoreOwner(service)
-            // The service (and thus its lifecycle) outlives any single overlay
-            // show/dismiss cycle, unlike an Activity/Fragment tree - so disposal
-            // has to be tied to this view leaving the window, not to the owner
-            // ever reaching ON_DESTROY (it won't, until the service itself dies).
+        val composeView = ComposeView(context).apply {
+            setViewTreeLifecycleOwner(owner)
+            setViewTreeSavedStateRegistryOwner(owner)
+            setViewTreeViewModelStoreOwner(owner)
+            // Disposal is tied to this view leaving the window (there's no
+            // longer a Service/Activity lifecycle to tie it to instead) -
+            // teardown() below both removes the view and destroys the owner.
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             // The window is now focusable (FLAG_NOT_FOCUSABLE removed below) so
             // it can actually receive the back key - touch dispatch already
@@ -148,15 +199,15 @@ object CallEndOverlayManager {
                     durationMs = durationMs,
                     nativeAd = CallEndAdManager.nativeAdState.value,
                     unreadCount = unreadCountState.value,
-                    onMessage = { openChat(service, phoneNumber) },
-                    onCallBack = { callBack(service, phoneNumber) },
-                    onSave = { saveContact(service, phoneNumber) },
-                    onBlock = { blockNumber(service, phoneNumber) },
-                    onOpenApp = { openApp(service) },
+                    onMessage = { openChat(context, phoneNumber) },
+                    onCallBack = { callBack(context, phoneNumber) },
+                    onSave = { saveContact(context, phoneNumber) },
+                    onBlock = { blockNumber(context, phoneNumber) },
+                    onOpenApp = { openApp(context) },
                     onDismiss = { dismiss() },
-                    onCopyNumber = { copyNumber(service, phoneNumber) },
-                    onViewContact = { viewContact(service, phoneNumber) },
-                    onReportSpam = { reportSpam(service, phoneNumber) }
+                    onCopyNumber = { copyNumber(context, phoneNumber) },
+                    onViewContact = { viewContact(context, phoneNumber) },
+                    onReportSpam = { reportSpam(context, phoneNumber) }
                 )
             }
         }
@@ -203,7 +254,7 @@ object CallEndOverlayManager {
             Log.d(TAG, "addView: succeeded - overlay is now showing, no exception thrown")
             val focusRequested = composeView.requestFocus()
             Log.d(TAG, "addView: requestFocus() called - focusRequested=$focusRequested")
-            registerCloseSystemDialogsReceiver(service)
+            registerCloseSystemDialogsReceiver(context)
         } catch (e: Exception) {
             Log.e(TAG, "addView: failed to add overlay view - ${e.javaClass.name}: ${e.message}", e)
             teardown()
@@ -466,6 +517,9 @@ object CallEndOverlayManager {
         }
         overlayView = null
         windowManager = null
+
+        lifecycleOwner?.destroy()
+        lifecycleOwner = null
 
         CallEndAdManager.destroy()
     }

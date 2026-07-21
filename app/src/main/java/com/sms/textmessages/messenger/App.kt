@@ -3,7 +3,6 @@ package com.sms.textmessages.messenger
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
-import com.sms.textmessages.messenger.service.OverlayHostService
 import com.sms.textmessages.messenger.ui.ads.HomeAdManager
 import com.sms.textmessages.messenger.ui.splash.SplashActivity
 
@@ -23,14 +22,6 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
 
         // preload app open
         HomeAdManager.loadAppOpen(this)
-
-        // Starts the persistent foreground service both the call-end and SMS
-        // category overlays attach to. App.onCreate() runs during a normal
-        // user launch (tapping the icon) while the process is still coming to
-        // the foreground, which is a permitted context to start a foreground
-        // service from - unlike CallStateListener's PHONE_STATE receiver,
-        // which is not. See OverlayHostService's class doc.
-        OverlayHostService.start(this)
     }
 
     override fun onActivityStarted(activity: Activity) {
