@@ -16,6 +16,10 @@ import com.sms.textmessages.messenger.utils.OverlayPermission
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        private val SMS_URI_SCHEMES = setOf("sms", "smsto", "mms", "mmsto")
+    }
+
     private val _openChatSender = mutableStateOf<String?>(null)
     private val _openChatAutoFocus = mutableStateOf(false)
 
@@ -89,7 +93,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        _openChatSender.value = intent.getStringExtra("open_chat_sender")
+        _openChatSender.value = extractSenderFromIntent(intent) ?: intent.getStringExtra("open_chat_sender")
         _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
 
         requestSmsPermissions()
@@ -127,8 +131,39 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        _openChatSender.value = intent.getStringExtra("open_chat_sender")
+        _openChatSender.value = extractSenderFromIntent(intent) ?: intent.getStringExtra("open_chat_sender")
         _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
+    }
+
+    // Pulls the target phone number out of an external sms:/smsto:/mms:/mmsto:
+    // intent (e.g. tapping "Message" on a contact in the Contacts app), which
+    // arrives via intent.data rather than the "open_chat_sender" custom extra
+    // this app uses internally for notification/overlay taps.
+    private fun extractSenderFromIntent(intent: Intent): String? {
+        val data = intent.data
+
+        if (data != null) {
+            android.util.Log.d(
+                "MAIN_INTENT_DEBUG",
+                "action=${intent.action} data=$data extras=${intent.extras}"
+            )
+        }
+
+        if (data == null || data.scheme !in SMS_URI_SCHEMES) {
+            return null
+        }
+
+        val isRecognizedAction = intent.action == Intent.ACTION_SENDTO ||
+            intent.action == Intent.ACTION_VIEW ||
+            intent.action == android.telephony.TelephonyManager.ACTION_RESPOND_VIA_MESSAGE
+
+        if (!isRecognizedAction) {
+            return null
+        }
+
+        // schemeSpecificPart is the number for sms:/smsto:/mms:/mmsto: URIs;
+        // smsto: URIs can carry a "?body=..." suffix which isn't part of the number.
+        return data.schemeSpecificPart?.substringBefore("?")?.takeIf { it.isNotBlank() }
     }
 
     private fun requestSmsPermissions() {
