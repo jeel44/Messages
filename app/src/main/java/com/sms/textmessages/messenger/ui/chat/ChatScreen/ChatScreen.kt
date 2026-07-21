@@ -51,7 +51,7 @@ import android.Manifest
 import androidx.core.app.ActivityCompat
 import android.content.pm.PackageManager
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -109,7 +109,6 @@ fun ChatScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
     var isSearching by remember { mutableStateOf(startWithSearchOpen) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -135,6 +134,19 @@ fun ChatScreen(
     // slate seeded by the caller's current messages, never a previous
     // thread's leftover state.
     var chatMessages by remember(phoneNumber) { mutableStateOf(messages.toMutableList()) }
+
+    // Keyed on phoneNumber AND on whether chatMessages has real content yet,
+    // so a fresh LazyListState is built already positioned at the last
+    // message the instant chatMessages first becomes non-empty - whether
+    // that happens on the very first composed frame (caller had messages
+    // ready in time) or a moment later (caller's async load still in
+    // flight and this starts out empty, see the "MESSAGE LIST" placeholder
+    // below). Either way the LazyColumn's first-ever composed frame is
+    // already scrolled to the bottom, so there's nothing to animate or
+    // scroll-to afterward - no top-then-jump flash on open.
+    val listState = remember(phoneNumber, chatMessages.isNotEmpty()) {
+        LazyListState(firstVisibleItemIndex = (chatMessages.size - 1).coerceAtLeast(0))
+    }
 
     // TEMPORARY DEBUG LOGGING - runs every recomposition; shows the current
     // value of the remember(phoneNumber)-scoped chatMessages state, which is
@@ -227,7 +239,7 @@ fun ChatScreen(
         context.sendBroadcast(Intent("SMS_INBOX_UPDATED"))
     }
 
-    var firstLoad by remember { mutableStateOf(true) }
+    var firstLoad by remember(phoneNumber) { mutableStateOf(true) }
 
     // The ad banner loads asynchronously and grows the bottom bar after the
     // initial layout/scroll, shrinking the LazyColumn's viewport without a
@@ -242,7 +254,11 @@ fun ChatScreen(
         if (chatMessages.isNotEmpty()) {
 
             if (firstLoad) {
-                listState.scrollToItem(chatMessages.lastIndex)
+                // No scroll call needed here - the listState above was already
+                // constructed positioned at the last item the moment
+                // chatMessages first became non-empty, so this frame is
+                // already correct. Just stop treating future size changes
+                // (new incoming message, banner appearing) as the first load.
                 firstLoad = false
             } else {
                 listState.animateScrollToItem(chatMessages.lastIndex)
@@ -608,36 +624,57 @@ fun ChatScreen(
             // 🔵 MESSAGE LIST
             ////////////////////////////////////////////////////////
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                reverseLayout = false,
-                contentPadding = PaddingValues(vertical = 8.dp)
-            ) {
+            // chatMessages starts empty when the caller (AppNavigation) is
+            // still resolving this thread's messages off the main thread -
+            // composing the LazyColumn during that gap would show it briefly
+            // empty, then jump once real data lands via LaunchedEffect(messages)
+            // above. Holding a plain same-background Box instead until real
+            // content exists means the LazyColumn's first-ever composed frame
+            // is already both populated AND correctly scrolled (see listState
+            // above) - no empty flash, no top-then-bottom jump. A genuinely
+            // empty thread (new contact, no history yet) looks identical
+            // either way, since there's no separate "no messages" placeholder.
+            if (chatMessages.isEmpty()) {
 
-                itemsIndexed(filteredMessages) { index, message ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                )
 
-                    val showDateHeader =
-                        index == 0 ||
-                                !isSameDay(
-                                    filteredMessages[index - 1].date,
-                                    message.date
-                                )
+            } else {
 
-                    if (showDateHeader) {
-                        DateSeparator(message.date)
-                    }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    reverseLayout = false,
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
 
-                    ChatBubble(
-                        message = message,
-                        isPersonalChat = isPersonalChat,
-                        onMediaClick = { attachment ->
-                            val index = threadAttachments.indexOfFirst { it.uri == attachment.uri }
-                            if (index >= 0) onMediaClick(index)
+                    itemsIndexed(filteredMessages) { index, message ->
+
+                        val showDateHeader =
+                            index == 0 ||
+                                    !isSameDay(
+                                        filteredMessages[index - 1].date,
+                                        message.date
+                                    )
+
+                        if (showDateHeader) {
+                            DateSeparator(message.date)
                         }
-                    )
+
+                        ChatBubble(
+                            message = message,
+                            isPersonalChat = isPersonalChat,
+                            onMediaClick = { attachment ->
+                                val index = threadAttachments.indexOfFirst { it.uri == attachment.uri }
+                                if (index >= 0) onMediaClick(index)
+                            }
+                        )
+                    }
                 }
             }
         }
