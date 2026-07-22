@@ -39,22 +39,21 @@ object SettingsAdManager {
 
         interstitialAd?.let {
 
-            App.disableAppOpenAd = true
-
             it.fullScreenContentCallback =
                 object : FullScreenContentCallback() {
 
                     override fun onAdDismissedFullScreenContent() {
-                        App.disableAppOpenAd = false
+                        App.isFullScreenAdInFlight = false
                         onFinish()
                     }
 
                     override fun onAdFailedToShowFullScreenContent(adError: AdError) {
-                        App.disableAppOpenAd = false
+                        App.isFullScreenAdInFlight = false
                         onFinish()
                     }
                 }
 
+            App.isFullScreenAdInFlight = true
             it.show(activity)
 
         } ?: onFinish()

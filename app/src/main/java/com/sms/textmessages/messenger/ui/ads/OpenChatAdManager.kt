@@ -81,9 +81,6 @@ object OpenChatAdManager {
             return
         }
 
-        // 🚫 Disable App Open Ad
-        App.disableAppOpenAd = true
-
         interstitialAd?.fullScreenContentCallback =
             object : FullScreenContentCallback() {
 
@@ -91,9 +88,7 @@ object OpenChatAdManager {
 
                     isAdShowing = false
                     interstitialAd = null
-
-                    // ✅ Re-enable App Open Ad
-                    App.disableAppOpenAd = false
+                    App.isFullScreenAdInFlight = false
 
                     load(activity)
 
@@ -103,15 +98,14 @@ object OpenChatAdManager {
                 override fun onAdFailedToShowFullScreenContent(adError: AdError) {
 
                     isAdShowing = false
-
-                    // ✅ Re-enable App Open Ad
-                    App.disableAppOpenAd = false
+                    App.isFullScreenAdInFlight = false
 
                     onFinish()
                 }
             }
 
         isAdShowing = true
+        App.isFullScreenAdInFlight = true
         interstitialAd?.show(activity)
     }
 }

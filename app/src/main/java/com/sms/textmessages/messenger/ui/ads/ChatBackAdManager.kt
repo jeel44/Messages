@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.android.gms.ads.*
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.sms.textmessages.messenger.App
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
 
 object ChatBackAdManager {
@@ -87,6 +88,7 @@ object ChatBackAdManager {
 
                     isAdShowing = false
                     interstitialAd = null
+                    App.isFullScreenAdInFlight = false
 
                     load(activity)
 
@@ -96,6 +98,7 @@ object ChatBackAdManager {
                 override fun onAdFailedToShowFullScreenContent(adError: AdError) {
 
                     isAdShowing = false
+                    App.isFullScreenAdInFlight = false
 
                     onFinish()
                 }
@@ -103,6 +106,7 @@ object ChatBackAdManager {
 
         isAdShowing = true
 
+        App.isFullScreenAdInFlight = true
         interstitialAd?.show(activity)
     }
 }
