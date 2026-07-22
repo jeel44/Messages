@@ -124,20 +124,6 @@ fun CallLogDisclosureScreen(
                 color = Color.White
             )
         }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Keep showing \"Unknown\"",
-            fontFamily = GeneralSans,
-            fontSize = 14.sp,
-            color = Color.Gray,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onDismiss() }
-                .padding(vertical = 14.dp)
-        )
     }
 }
 
