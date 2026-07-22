@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.sms.textmessages.messenger.App
 
 object OverlayPermission {
 
@@ -19,6 +20,7 @@ object OverlayPermission {
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:${activity.packageName}")
             )
+            App.disableAppOpenAd = true
             activity.startActivity(intent)
         }
     }

@@ -255,6 +255,7 @@ class MainActivity : ComponentActivity() {
                 val intent =
                     roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
 
+                App.disableAppOpenAd = true
                 smsRoleLauncher.launch(intent)
             }
         }
