@@ -261,7 +261,7 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
         const val EXTRA_SENDER = "extra_sender"
         const val EXTRA_BODY = "extra_body"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
-        private const val AUTO_DISMISS_MS = 5000L
+        private const val AUTO_DISMISS_MS = 10000L
 
         fun start(context: Context, category: NotificationCategory, sender: String, body: String, notificationId: Int) {
             if (!OverlayPermission.canDrawOverlays(context)) {
