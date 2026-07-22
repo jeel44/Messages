@@ -116,10 +116,16 @@ object HomeAdManager {
     // ---------------- APP OPEN ----------------
     fun loadAppOpen(application: Application) {
 
-        if (!RemoteConfigManager.homeAppOpenEnabled()) return
+        if (!RemoteConfigManager.homeAppOpenEnabled()) {
+            Log.d("HOME_APP_OPEN", "loadAppOpen: skipped - home_app_open_enabled is false")
+            return
+        }
 
         val adId = RemoteConfigManager.homeAppOpenId()
-        if (adId.isEmpty()) return
+        if (adId.isEmpty()) {
+            Log.w("HOME_APP_OPEN", "loadAppOpen: skipped - home_app_open_ad_id is empty (Remote Config not yet activated?)")
+            return
+        }
 
         AppOpenAd.load(
             application,
@@ -129,10 +135,12 @@ object HomeAdManager {
             object : AppOpenAd.AppOpenAdLoadCallback() {
 
                 override fun onAdLoaded(ad: AppOpenAd) {
+                    Log.d("HOME_APP_OPEN", "Loaded")
                     appOpenAd = ad
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
+                    Log.d("HOME_APP_OPEN", "Failed: code=${error.code} domain=${error.domain} message=${error.message}")
                     appOpenAd = null
                 }
             }

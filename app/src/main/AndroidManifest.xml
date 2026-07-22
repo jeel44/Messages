@@ -33,6 +33,13 @@
 
         <!-- ================= ADMOB ================= -->
 
+        <!-- ⚠️ BLOCKING BEFORE PRODUCTION RELEASE: this is still Google's public
+             sample/test App ID (used in every AdMob tutorial), not this app's real
+             App ID. Checked RemoteConfigManager, google-services.json, and the rest
+             of the project first - the real ID isn't stored anywhere in this repo.
+             Replace with the real ca-app-pub-...~... App ID from AdMob console >
+             Apps > [this app] > App settings before shipping a production build,
+             or risk AdMob account suspension for serving test config in a live app. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713"/>

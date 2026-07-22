@@ -81,12 +81,22 @@ object RemoteConfigManager {
 
         remoteConfig.setDefaultsAsync(defaults)
 
+        // onComplete() must fire from inside this listener, not synchronously
+        // after kicking off fetchAndActivate() - callers (App.onCreate(),
+        // SplashActivity) use onComplete() as the signal that real values are
+        // activated and safe to read. fetchAndActivate() completes on both
+        // fetch success AND failure (e.g. no network), so this always fires -
+        // on failure it just leaves the "" defaults active, which every ad
+        // manager already treats as "don't load" rather than hanging forever.
         remoteConfig.fetchAndActivate()
-            .addOnCompleteListener {
-                Log.d(TAG, "Remote config fetch complete")
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.d(TAG, "Remote config fetch complete - activated=${task.result}")
+                } else {
+                    Log.w(TAG, "Remote config fetch failed - falling back to defaults/cache", task.exception)
+                }
+                onComplete()
             }
-
-        onComplete()
     }
 
     // ================= SPLASH =================
