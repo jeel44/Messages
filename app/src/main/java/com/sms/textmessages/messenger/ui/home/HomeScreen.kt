@@ -266,24 +266,6 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
     // there's no separate attachments list to load/assign alongside it.
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
 
-    // TEMPORARY DEBUG LOGGING - traces selectedChat/messages state transitions.
-    var lastLoggedChatId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(selectedChat?.threadId) {
-        Log.d(
-            "ChatFlashDebug",
-            "ts=${System.currentTimeMillis()} HomeScreen selectedChat CHANGED: " +
-                "${lastLoggedChatId} -> ${selectedChat?.threadId} (phone=${selectedChat?.phone})"
-        )
-        lastLoggedChatId = selectedChat?.threadId
-    }
-    LaunchedEffect(messages) {
-        Log.d(
-            "ChatFlashDebug",
-            "ts=${System.currentTimeMillis()} HomeScreen messages CHANGED: size=${messages.size} " +
-                "firstMsgText=${messages.firstOrNull()?.text?.take(30)}"
-        )
-    }
-
     val context = LocalContext.current
     val activity = context as Activity
     var searchText by remember { mutableStateOf("") }
@@ -1129,11 +1111,6 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
 
                                     } else {
 
-                                        Log.d(
-                                            "ChatFlashDebug",
-                                            "ts=${System.currentTimeMillis()} HomeScreen ROW TAPPED threadId=${sms.threadId} phone=${sms.phone}"
-                                        )
-
                                         scope.launch {
 
                                             withContext(Dispatchers.IO) {
@@ -1150,10 +1127,6 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                                             }
 
                                             OpenChatAdManager.onClick(activity) {
-                                                Log.d(
-                                                    "ChatFlashDebug",
-                                                    "ts=${System.currentTimeMillis()} HomeScreen ad callback firing, about to set messages + selectedChat threadId=${sms.threadId}"
-                                                )
                                                 messages = loadedMessages
                                                 selectedChat = sms
                                             }

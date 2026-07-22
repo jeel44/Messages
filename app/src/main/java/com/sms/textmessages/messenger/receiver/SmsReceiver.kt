@@ -13,8 +13,6 @@ class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
 
-        Log.d("SMS_DEBUG", "Step1: onReceive fired action=${intent.action}")
-
         if (intent.action != Telephony.Sms.Intents.SMS_DELIVER_ACTION) return
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
@@ -32,8 +30,6 @@ class SmsReceiver : BroadcastReceiver() {
 
         // Overlay popup only - no system notification is posted for incoming SMS.
         showOverlay(context, sender, message)
-
-        Log.d("SMS_DEBUG", "SMS RECEIVED from $sender")
 
         val pendingResult = goAsync()
 
@@ -78,8 +74,6 @@ class SmsReceiver : BroadcastReceiver() {
                 )
                 dao.insertThreads(listOf(thread))
 
-                Log.d("SMS_DEBUG", "Step2: INSERTED sender=$sender threadId=$realThreadId")
-
                 val updateIntent = Intent("SMS_INBOX_UPDATED")
                 updateIntent.setPackage(context.packageName)
                 context.sendBroadcast(updateIntent)
@@ -88,7 +82,6 @@ class SmsReceiver : BroadcastReceiver() {
                 chatIntent.setPackage(context.packageName)
                 chatIntent.putExtra("sender", sender)
                 chatIntent.putExtra("message", message)
-                Log.d("SMS_DEBUG", "Step3: sending NEW_SMS_RECEIVED broadcast sender=$sender message=$message pkg=${context.packageName}")
                 context.sendBroadcast(chatIntent)
 
             } catch (e: Exception) {

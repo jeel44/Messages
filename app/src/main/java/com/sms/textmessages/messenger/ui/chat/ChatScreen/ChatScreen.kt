@@ -116,20 +116,6 @@ fun ChatScreen(
         mutableStateOf(PreferenceManager.isNotificationsMuted(context, phoneNumber))
     }
 
-    // TEMPORARY DEBUG LOGGING - runs on every recomposition of ChatScreen.
-    // ChatMessage carries no thread/phone identifier of its own, so the
-    // message body text is logged as the best available proxy for "which
-    // thread does this data actually belong to".
-    SideEffect {
-        Log.d(
-            "ChatFlashDebug",
-            "ts=${System.currentTimeMillis()} ChatScreen ENTER/RECOMPOSE phoneNumber=$phoneNumber " +
-                "messagesPropSize=${messages.size} " +
-                "firstMsgText=${messages.firstOrNull()?.text?.take(30)} " +
-                "firstMsgDate=${messages.firstOrNull()?.date}"
-        )
-    }
-
     // Keyed on phoneNumber so switching threads always starts from a clean
     // slate seeded by the caller's current messages, never a previous
     // thread's leftover state.
@@ -148,26 +134,11 @@ fun ChatScreen(
         LazyListState(firstVisibleItemIndex = (chatMessages.size - 1).coerceAtLeast(0))
     }
 
-    // TEMPORARY DEBUG LOGGING - runs every recomposition; shows the current
-    // value of the remember(phoneNumber)-scoped chatMessages state, which is
-    // what the LazyColumn below actually renders.
-    Log.d(
-        "ChatFlashDebug",
-        "ts=${System.currentTimeMillis()} ChatScreen chatMessages CURRENT for phoneNumber=$phoneNumber " +
-            "size=${chatMessages.size} firstText=${chatMessages.firstOrNull()?.text?.take(30)}"
-    )
-
     // Personal (non service-sender) threads get the new visual design;
     // OTP/Transaction/Offers threads keep the existing look untouched.
     val isPersonalChat = !isServiceSender(phoneNumber)
 
     LaunchedEffect(messages) {
-        Log.d("SMS_DEBUG", "Step6: LaunchedEffect(messages) fired size=${messages.size} guard=${messages.isNotEmpty()}")
-        Log.d(
-            "ChatFlashDebug",
-            "ts=${System.currentTimeMillis()} ChatScreen LaunchedEffect(messages) fired for phoneNumber=$phoneNumber " +
-                "size=${messages.size} firstText=${messages.firstOrNull()?.text?.take(30)} willAssign=${messages.isNotEmpty()}"
-        )
         if (messages.isNotEmpty()) {
             chatMessages = messages.toMutableList()
         }

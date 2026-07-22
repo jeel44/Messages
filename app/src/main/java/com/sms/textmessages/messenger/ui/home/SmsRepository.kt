@@ -431,7 +431,6 @@ object SmsRepository {
 
     suspend fun refreshThreads(context: Context): List<SmsThread> {
         Log.d("TRACE_REPO", "refreshThreads() called")
-        Log.d("SMS_DEBUG", "Loading SMS from database")
 
         val db = AppDatabase.getDatabase(context)
         val dao = db.threadDao()
@@ -443,8 +442,6 @@ object SmsRepository {
 
         val threads = loadThreads(context, existingByThreadId)
             .sortedByDescending { it.date }
-
-        Log.d("SMS_DEBUG", "Total threads loaded: ${threads.size}")
 
         dao.replaceAllThreads(
             threads.map {
