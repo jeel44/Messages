@@ -3,6 +3,7 @@ package com.sms.textmessages.messenger.ui.splash
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.Animatable
@@ -38,6 +39,11 @@ class SplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // TEMPORARY DEBUG LOGGING - diagnosing "only animation shows" splash
+        // regression. Tags every stage so a repro has actual evidence instead
+        // of guessing at layout code.
+        Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} action=${intent?.action} isTaskRoot=$isTaskRoot")
+
         // 🚫 Disable AppOpen from Application while splash runs
         App.disableAppOpenAd = true
 
@@ -46,15 +52,19 @@ class SplashActivity : ComponentActivity() {
             intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true &&
             intent?.action == Intent.ACTION_MAIN
         ) {
+            Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} skipping splash - coming from background, finishing")
             finish()
             return
         }
 
         if (intent.action != Intent.ACTION_MAIN) {
+            Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} non-MAIN action - routing straight to MainActivity, finishing")
             startActivity(Intent(this, MainActivity::class.java))
             finish()
             return
         }
+
+        Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} calling setContent(SplashScreenUI)")
 
         setContent {
             SplashScreenUI(
@@ -68,7 +78,10 @@ class SplashActivity : ComponentActivity() {
 
     private fun startSplashLogic() {
 
+        Log.d(TAG, "startSplashLogic: ts=${System.currentTimeMillis()} calling RemoteConfigManager.init()")
+
         RemoteConfigManager.init {
+            Log.d(TAG, "RemoteConfigManager.init callback: ts=${System.currentTimeMillis()} fired - calling SplashAdManager.loadAds()")
             SplashAdManager.loadAds(this)
         }
     }
@@ -79,18 +92,24 @@ class SplashActivity : ComponentActivity() {
     // back from Compose instead of being awaited directly in this class.
     private fun onSplashProgressComplete() {
 
+        Log.d(TAG, "onSplashProgressComplete: ts=${System.currentTimeMillis()} progress animation finished - calling SplashAdManager.showAdIfAvailable()")
+
         SplashAdManager.showAdIfAvailable(
             activity = this,
             onAdDismissed = {
+                Log.d(TAG, "showAdIfAvailable.onAdDismissed: ts=${System.currentTimeMillis()} calling goToHome()")
                 goToHome()
             },
             onAdFailed = {
+                Log.d(TAG, "showAdIfAvailable.onAdFailed: ts=${System.currentTimeMillis()} calling goToHome()")
                 goToHome()
             }
         )
     }
 
     private fun goToHome() {
+
+        Log.d(TAG, "goToHome: ts=${System.currentTimeMillis()} isFirstLaunch=${PreferenceManager.isFirstLaunch(this)}")
 
         // ✅ Re-enable AppOpen for future background launches
         App.disableAppOpenAd = false
@@ -109,6 +128,10 @@ class SplashActivity : ComponentActivity() {
         }
 
         finish()
+    }
+
+    companion object {
+        private const val TAG = "SPLASH_DEBUG"
     }
 }
 

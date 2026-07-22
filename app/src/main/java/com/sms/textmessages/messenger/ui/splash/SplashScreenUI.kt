@@ -1,5 +1,6 @@
 package com.sms.textmessages.messenger.ui.splash
 
+import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -51,10 +52,17 @@ fun SplashScreenUI(progress: Animatable<Float, AnimationVector1D>, onProgressCom
     val nativeAd: NativeAd? = SplashAdManager.nativeAdState
 
     LaunchedEffect(Unit) {
+        // TEMPORARY DEBUG LOGGING - diagnosing "only animation shows" splash
+        // regression: confirms this LaunchedEffect actually starts, and that
+        // animateTo() returns (vs. being cancelled by recomposition/disposal,
+        // which would silently skip onProgressComplete() and strand the UI
+        // on the animation with nothing calling into the ad/goToHome flow).
+        Log.d("SPLASH_DEBUG", "SplashScreenUI LaunchedEffect: ts=${System.currentTimeMillis()} animateTo() starting")
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 4000, easing = LinearEasing)
         )
+        Log.d("SPLASH_DEBUG", "SplashScreenUI LaunchedEffect: ts=${System.currentTimeMillis()} animateTo() completed - calling onProgressComplete()")
         onProgressComplete()
     }
 

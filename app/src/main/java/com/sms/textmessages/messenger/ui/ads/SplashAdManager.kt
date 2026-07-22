@@ -110,13 +110,25 @@ object SplashAdManager {
         onAdFailed: () -> Unit
     ) {
 
+        // TEMPORARY DEBUG LOGGING - diagnosing "only animation shows" splash
+        // regression: if isAdShowing is somehow stuck true from a prior
+        // splash (resetAdState() not called / stale state), this returns
+        // here without calling onAdDismissed() or onAdFailed(), so
+        // SplashActivity.goToHome() never runs and the UI is stranded on the
+        // now-finished progress animation.
+        Log.d("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} isAdAlreadyShown=$isAdAlreadyShown isAdShowing=$isAdShowing appOpenAdLoaded=${appOpenAd != null} interstitialAdLoaded=${interstitialAd != null}")
+
         // Prevent double ad
         if (isAdAlreadyShown) {
+            Log.d("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} isAdAlreadyShown - calling onAdDismissed() and returning")
             onAdDismissed()
             return
         }
 
-        if (isAdShowing) return
+        if (isAdShowing) {
+            Log.w("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} isAdShowing already true - returning WITHOUT calling onAdDismissed/onAdFailed (possible stuck-splash cause)")
+            return
+        }
 
         // Priority 1 → App Open
         appOpenAd?.let { ad ->
@@ -138,6 +150,7 @@ object SplashAdManager {
                     }
                 }
 
+            Log.d("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} showing AppOpen ad")
             ad.show(activity)
             return
         }
@@ -163,10 +176,12 @@ object SplashAdManager {
                     }
                 }
 
+            Log.d("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} showing Interstitial ad")
             ad.show(activity)
             return
         }
 
+        Log.d("ADS", "showAdIfAvailable: ts=${System.currentTimeMillis()} no ad loaded (appOpenAd and interstitialAd both null) - calling onAdFailed()")
         onAdFailed()
     }
 

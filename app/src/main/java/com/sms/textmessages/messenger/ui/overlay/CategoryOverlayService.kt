@@ -58,8 +58,16 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
     private val dismissHandler = Handler(Looper.getMainLooper())
     private var dismissRunnable: Runnable? = null
 
+    // TEMPORARY DEBUG LOGGING - diagnosing the fast-dismiss bug (overlay
+    // disappearing after ~1-2s instead of the coded AUTO_DISMISS_MS=5000).
+    // Set when addView() succeeds, cleared on every teardown path, so every
+    // dismiss()/removeOverlay() log line can report actual elapsed time
+    // instead of relying on logcat wall-clock diffing across processes.
+    private var shownAtMs: Long = 0L
+
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()}")
         savedStateRegistryController.performRestore(null)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
     }
@@ -87,9 +95,9 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
         val category = runCatching { NotificationCategory.valueOf(categoryName) }
             .getOrDefault(NotificationCategory.SERVICE_DEFAULT)
 
-        Log.d(TAG, "onStartCommand: category=$category sender=$sender notificationId=$notificationId")
+        Log.d(TAG, "onStartCommand: ts=${System.currentTimeMillis()} category=$category sender=$sender notificationId=$notificationId")
 
-        removeOverlay()
+        removeOverlay(reason = "onStartCommand-replacing-previous")
         showOverlay(category, sender, body, notificationId)
 
         return START_NOT_STICKY
@@ -111,7 +119,7 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
                     messageBody = body,
                     onAction1 = { runAction1(category, sender, body, notificationId) },
                     onAction2 = { runAction2(category, sender, notificationId) },
-                    onDismiss = { dismiss(notificationId, cancelSystemNotification = false) }
+                    onDismiss = { dismiss(notificationId, cancelSystemNotification = false, reason = "composable-onDismiss") }
                 )
             }
         }
@@ -138,15 +146,17 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
         try {
             windowManager.addView(composeView, params)
             overlayView = composeView
-            Log.d(TAG, "showOverlay: addView succeeded - overlay is now showing")
+            shownAtMs = System.currentTimeMillis()
+            Log.d(TAG, "showOverlay: ts=$shownAtMs addView succeeded - overlay is now showing (notificationId=$notificationId)")
         } catch (e: Exception) {
             Log.e(TAG, "showOverlay: failed to add overlay view - ${e.javaClass.name}: ${e.message}", e)
             stopSelf()
             return
         }
 
-        dismissRunnable = Runnable { dismiss(notificationId, cancelSystemNotification = false) }.also {
+        dismissRunnable = Runnable { dismiss(notificationId, cancelSystemNotification = false, reason = "auto-dismiss-timer") }.also {
             dismissHandler.postDelayed(it, AUTO_DISMISS_MS)
+            Log.d(TAG, "showOverlay: ts=${System.currentTimeMillis()} auto-dismiss timer scheduled, fires in ${AUTO_DISMISS_MS}ms at target ts=${shownAtMs + AUTO_DISMISS_MS}")
         }
     }
 
@@ -159,7 +169,7 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
             NotificationCategory.TRANSACTION_CREDIT,
             NotificationCategory.SERVICE_DEFAULT -> openChat(sender, autoFocus = false)
         }
-        dismiss(notificationId, cancelSystemNotification = category == NotificationCategory.OTP)
+        dismiss(notificationId, cancelSystemNotification = category == NotificationCategory.OTP, reason = "action1:$category")
     }
 
     private fun runAction2(category: NotificationCategory, sender: String, notificationId: Int) {
@@ -168,7 +178,7 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
             NotificationCategory.OFFER -> muteSender(sender, notificationId)
             else -> Unit
         }
-        dismiss(notificationId, cancelSystemNotification = true)
+        dismiss(notificationId, cancelSystemNotification = true, reason = "action2:$category")
     }
 
     private fun openChat(sender: String, autoFocus: Boolean) {
@@ -204,19 +214,28 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
         })
     }
 
-    private fun dismiss(notificationId: Int, cancelSystemNotification: Boolean) {
-        Log.d(TAG, "dismiss(): notificationId=$notificationId cancelSystemNotification=$cancelSystemNotification")
+    private fun dismiss(notificationId: Int, cancelSystemNotification: Boolean, reason: String) {
+        val now = System.currentTimeMillis()
+        val elapsedSinceShowMs = if (shownAtMs != 0L) now - shownAtMs else -1
+        Log.d(
+            TAG,
+            "dismiss(): ts=$now reason=$reason notificationId=$notificationId " +
+                "cancelSystemNotification=$cancelSystemNotification elapsedSinceShowMs=$elapsedSinceShowMs " +
+                "(coded AUTO_DISMISS_MS=$AUTO_DISMISS_MS)"
+        )
         if (cancelSystemNotification && notificationId != -1) {
             sendBroadcast(Intent(this, NotificationActionReceiver::class.java).apply {
                 action = NotificationActionReceiver.ACTION_DISMISS
                 putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
             })
         }
-        removeOverlay()
+        removeOverlay(reason = reason)
         stopSelf()
     }
 
-    private fun removeOverlay() {
+    private fun removeOverlay(reason: String) {
+        val hadPendingTimer = dismissRunnable != null
+        Log.d(TAG, "removeOverlay: ts=${System.currentTimeMillis()} reason=$reason hadPendingDismissTimer=$hadPendingTimer")
         dismissRunnable?.let { dismissHandler.removeCallbacks(it) }
         dismissRunnable = null
         try {
@@ -225,10 +244,12 @@ class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, View
             Log.e(TAG, "removeOverlay: failed to remove overlay view - ${e.javaClass.name}: ${e.message}", e)
         }
         overlayView = null
+        shownAtMs = 0L
     }
 
     override fun onDestroy() {
-        removeOverlay()
+        Log.d(TAG, "onDestroy: ts=${System.currentTimeMillis()}")
+        removeOverlay(reason = "onDestroy")
         super.onDestroy()
     }
 
