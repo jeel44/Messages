@@ -12,7 +12,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
 import com.sms.textmessages.messenger.ui.navigation.AppNavigation
+import com.sms.textmessages.messenger.ui.onboarding.CallLogDisclosureScreen
 import com.sms.textmessages.messenger.utils.OverlayPermission
+import com.sms.textmessages.messenger.utils.PreferenceManager
 
 class MainActivity : ComponentActivity() {
 
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
 
     private val _openChatSender = mutableStateOf<String?>(null)
     private val _openChatAutoFocus = mutableStateOf(false)
+    private val _showCallLogDisclosure = mutableStateOf(false)
 
     // Request multiple SMS permissions
     private val smsPermissionLauncher =
@@ -100,7 +103,11 @@ class MainActivity : ComponentActivity() {
         requestContactsPermission()
         requestNotificationPermission()
         requestPhoneStatePermission()
-        requestCallLogPermission()
+        if (shouldShowCallLogDisclosure()) {
+            _showCallLogDisclosure.value = true
+        } else {
+            requestCallLogPermission()
+        }
         requestDefaultRole()
         requestOverlayPermission()
 
@@ -111,7 +118,22 @@ class MainActivity : ComponentActivity() {
             val openChatSender = _openChatSender.value
             val openChatAutoFocus = _openChatAutoFocus.value
 
-            if (language == null) {
+            if (_showCallLogDisclosure.value) {
+                // Shown once ever, before the first READ_CALL_LOG request -
+                // gated ahead of the language/nav split below since it mirrors
+                // where requestCallLogPermission() used to fire unconditionally.
+                CallLogDisclosureScreen(
+                    onAllow = {
+                        PreferenceManager.setCallLogDisclosureShown(this)
+                        _showCallLogDisclosure.value = false
+                        requestCallLogPermission()
+                    },
+                    onDismiss = {
+                        PreferenceManager.setCallLogDisclosureShown(this)
+                        _showCallLogDisclosure.value = false
+                    }
+                )
+            } else if (language == null) {
                 // First launch → Language screen
                 com.sms.textmessages.messenger.ui.language.LanguageScreen()
             } else {
@@ -230,6 +252,21 @@ class MainActivity : ComponentActivity() {
         ) {
             callLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
         }
+    }
+
+    // Gates CallLogDisclosureScreen: only ever shown once (call_log_disclosure_shown
+    // flag), and only if the permission isn't already granted or already decided
+    // via a previous denial - respects a choice the user already made.
+    private fun shouldShowCallLogDisclosure(): Boolean {
+
+        if (PreferenceManager.isCallLogDisclosureShown(this)) {
+            return false
+        }
+
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_CALL_LOG
+        ) != PackageManager.PERMISSION_GRANTED
     }
 
     // Draw-over-other-apps permission for CategoryOverlayService's popup.

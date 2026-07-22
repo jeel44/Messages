@@ -14,6 +14,7 @@ object PreferenceManager {
     private const val KEY_BLOCKED_IMPORT_DONE = "blocked_import_done"
     private const val KEY_ARCHIVE_SUGGESTION_CHECKED = "archive_suggestion_checked"
     private const val KEY_CALL_END_ENABLED = "call_end_enabled"
+    private const val KEY_CALL_LOG_DISCLOSURE_SHOWN = "call_log_disclosure_shown"
 
     fun isFirstLaunch(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -149,5 +150,15 @@ object PreferenceManager {
     fun setCallEndEnabled(context: Context, enabled: Boolean) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_CALL_END_ENABLED, enabled).apply()
+    }
+
+    fun isCallLogDisclosureShown(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_CALL_LOG_DISCLOSURE_SHOWN, false)
+    }
+
+    fun setCallLogDisclosureShown(context: Context) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_CALL_LOG_DISCLOSURE_SHOWN, true).apply()
     }
 }
