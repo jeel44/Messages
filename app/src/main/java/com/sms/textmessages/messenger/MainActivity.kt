@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                     println("$permission DENIED")
                 }
             }
+            requestContactsPermission()
         }
 
     // Request contacts permission
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 println("CONTACT PERMISSION DENIED")
             }
+            requestNotificationPermission()
         }
 
     // Request notification permission
@@ -56,6 +58,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 println("NOTIFICATION PERMISSION DENIED")
             }
+            requestPhoneStatePermission()
         }
 
     // Launcher for default SMS role
@@ -78,6 +81,11 @@ class MainActivity : ComponentActivity() {
             } else {
                 println("READ_PHONE_STATE DENIED")
             }
+            if (!shouldShowCallLogDisclosure()) {
+                requestCallLogPermission()
+            } else {
+                requestOverlayPermission()
+            }
         }
 
     // READ_CALL_LOG - fallback source CallStateListener uses to resolve the
@@ -94,6 +102,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 println("READ_CALL_LOG DENIED")
             }
+            requestOverlayPermission()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -132,6 +141,7 @@ class MainActivity : ComponentActivity() {
                     onDismiss = {
                         PreferenceManager.setCallLogDisclosureShown(this)
                         _showCallLogDisclosure.value = false
+                        requestOverlayPermission()
                     }
                 )
             } else if (language == null) {
@@ -203,6 +213,8 @@ class MainActivity : ComponentActivity() {
 
         if (notGranted.isNotEmpty()) {
             smsPermissionLauncher.launch(notGranted.toTypedArray())
+        } else {
+            requestContactsPermission()
         }
     }
 
@@ -214,6 +226,8 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             contactPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+        } else {
+            requestNotificationPermission()
         }
     }
 
@@ -229,8 +243,10 @@ class MainActivity : ComponentActivity() {
                 notificationPermissionLauncher.launch(
                     Manifest.permission.POST_NOTIFICATIONS
                 )
+                return
             }
         }
+        requestPhoneStatePermission()
     }
 
     private fun requestPhoneStatePermission() {
@@ -241,6 +257,10 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+        } else if (!shouldShowCallLogDisclosure()) {
+            requestCallLogPermission()
+        } else {
+            requestOverlayPermission()
         }
     }
 
@@ -252,6 +272,8 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             callLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
+        } else {
+            requestOverlayPermission()
         }
     }
 
@@ -318,13 +340,6 @@ class MainActivity : ComponentActivity() {
 
     private fun requestRuntimePermissions() {
         requestSmsPermissions()
-        requestContactsPermission()
-        requestNotificationPermission()
-        requestPhoneStatePermission()
-        if (!shouldShowCallLogDisclosure()) {
-            requestCallLogPermission()
-        }
-        requestOverlayPermission()
     }
 }
 
