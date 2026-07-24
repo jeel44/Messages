@@ -83,8 +83,6 @@ class MainActivity : ComponentActivity() {
             }
             if (!shouldShowCallLogDisclosure()) {
                 requestCallLogPermission()
-            } else {
-                requestOverlayPermission()
             }
         }
 
@@ -102,7 +100,6 @@ class MainActivity : ComponentActivity() {
             } else {
                 println("READ_CALL_LOG DENIED")
             }
-            requestOverlayPermission()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -141,7 +138,6 @@ class MainActivity : ComponentActivity() {
                     onDismiss = {
                         PreferenceManager.setCallLogDisclosureShown(this)
                         _showCallLogDisclosure.value = false
-                        requestOverlayPermission()
                     }
                 )
             } else if (language == null) {
@@ -152,6 +148,9 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(
                     onRequestDefault = {
                         requestDefaultRole()
+                    },
+                    onRequestOverlayPermission = {
+                        requestOverlayPermissionIfNeeded()
                     },
                     openChatSender = openChatSender,
                     openChatAutoFocus = openChatAutoFocus,
@@ -259,8 +258,6 @@ class MainActivity : ComponentActivity() {
             phoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
         } else if (!shouldShowCallLogDisclosure()) {
             requestCallLogPermission()
-        } else {
-            requestOverlayPermission()
         }
     }
 
@@ -272,8 +269,6 @@ class MainActivity : ComponentActivity() {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             callLogPermissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
-        } else {
-            requestOverlayPermission()
         }
     }
 
@@ -302,6 +297,20 @@ class MainActivity : ComponentActivity() {
         )
         if (!OverlayPermission.canDrawOverlays(this)) {
             OverlayPermission.requestOverlayPermission(this)
+        }
+    }
+
+    // Decoupled from onboarding: requested contextually from Home screen,
+    // once ever (overlay_permission_requested flag), rather than fired
+    // inside the onboarding permission chain where its real Activity
+    // transition (startActivity to Settings) could race other pending
+    // permission dialogs.
+    private fun requestOverlayPermissionIfNeeded() {
+        if (!PreferenceManager.isOverlayPermissionRequested(this) &&
+            !OverlayPermission.canDrawOverlays(this)
+        ) {
+            PreferenceManager.setOverlayPermissionRequested(this)
+            requestOverlayPermission()
         }
     }
 

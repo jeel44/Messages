@@ -30,6 +30,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AppNavigation(
     onRequestDefault: () -> Unit,
+    onRequestOverlayPermission: () -> Unit = {},
     openChatSender: String? = null,
     openChatAutoFocus: Boolean = false,
     onChatSenderConsumed: () -> Unit = {}
@@ -46,6 +47,14 @@ fun AppNavigation(
             navController.navigate(Screen.Chat.createRoute(openChatSender, autoFocus = openChatAutoFocus))
             onChatSenderConsumed()
         }
+    }
+
+    // Requests Overlay permission contextually from Home screen, decoupled
+    // from the onboarding permission chain - fires once per composition
+    // entry, but onRequestOverlayPermission's own one-time flag ensures it
+    // only actually prompts the user once, ever.
+    LaunchedEffect(Unit) {
+        onRequestOverlayPermission()
     }
 
     NavHost(
