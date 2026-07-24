@@ -296,6 +296,10 @@ class MainActivity : ComponentActivity() {
     // Contextual, one-shot: only prompts if not already granted, alongside
     // the app's other startup permission requests.
     private fun requestOverlayPermission() {
+        android.util.Log.d(
+            "ROLE_DEBUG",
+            "requestOverlayPermission() called, canDrawOverlays=${OverlayPermission.canDrawOverlays(this)}"
+        )
         if (!OverlayPermission.canDrawOverlays(this)) {
             OverlayPermission.requestOverlayPermission(this)
         }
