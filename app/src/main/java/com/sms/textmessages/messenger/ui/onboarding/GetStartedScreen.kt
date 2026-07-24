@@ -2,6 +2,7 @@ package com.sms.textmessages.messenger.ui.onboarding
 
 import android.Manifest
 import android.app.Activity
+import android.app.role.RoleManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -84,6 +85,53 @@ fun GetStartedScreen() {
         PreferenceManager.setFirstLaunchDone(context)
         context.startActivity(Intent(context, LanguageActivity::class.java))
         activity.finish()
+    }
+
+    fun requestRuntimePermissions() {
+
+        val permissions = mutableListOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_CONTACTS
+        )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        permissionLauncher.launch(permissions.toTypedArray())
+    }
+
+    // Requests the default-SMS-handler role before any runtime permission
+    // dialog, mirroring MainActivity's requestDefaultRole() - Play requires
+    // the role prompt to fully resolve first. Runtime permissions are
+    // requested from roleLauncher's callback once the role prompt resolves,
+    // or directly below when there's no prompt to precede (role
+    // unavailable/already held/pre-Q device).
+    val roleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        requestRuntimePermissions()
+    }
+
+    fun requestDefaultRoleThenPermissions() {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+
+            val roleManager = context.getSystemService(RoleManager::class.java)
+
+            if (roleManager != null &&
+                roleManager.isRoleAvailable(RoleManager.ROLE_SMS) &&
+                !roleManager.isRoleHeld(RoleManager.ROLE_SMS)
+            ) {
+
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                roleLauncher.launch(intent)
+                return
+            }
+        }
+        requestRuntimePermissions()
     }
 
     Column(
@@ -264,19 +312,7 @@ fun GetStartedScreen() {
                     .clip(RoundedCornerShape(14.dp))
                     .background(AccentBlue)
                     .clickable {
-
-                        val permissions = mutableListOf(
-                            Manifest.permission.READ_SMS,
-                            Manifest.permission.RECEIVE_SMS,
-                            Manifest.permission.SEND_SMS,
-                            Manifest.permission.READ_CONTACTS
-                        )
-
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-
-                        permissionLauncher.launch(permissions.toTypedArray())
+                        requestDefaultRoleThenPermissions()
                     },
                 contentAlignment = Alignment.Center
             ) {
