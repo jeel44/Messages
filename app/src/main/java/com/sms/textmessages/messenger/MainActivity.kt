@@ -60,7 +60,9 @@ class MainActivity : ComponentActivity() {
 
     // Launcher for default SMS role
     private val smsRoleLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            requestRuntimePermissions()
+        }
 
     // READ_PHONE_STATE for CallStateListener, the manifest-declared receiver
     // that drives the post-call overlay - requested here rather than bundled
@@ -99,17 +101,10 @@ class MainActivity : ComponentActivity() {
         _openChatSender.value = extractSenderFromIntent(intent) ?: intent.getStringExtra("open_chat_sender")
         _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
 
-        requestSmsPermissions()
-        requestContactsPermission()
-        requestNotificationPermission()
-        requestPhoneStatePermission()
+        requestDefaultRole()
         if (shouldShowCallLogDisclosure()) {
             _showCallLogDisclosure.value = true
-        } else {
-            requestCallLogPermission()
         }
-        requestDefaultRole()
-        requestOverlayPermission()
 
         setContent {
 
@@ -278,6 +273,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Requests the default-SMS-handler role before any runtime permission
+    // dialog, since Play requires the role prompt to fully resolve first.
+    // Runtime permissions are requested from smsRoleLauncher's callback once
+    // the role prompt resolves, or directly below when there's no prompt to
+    // precede (role unavailable/already held/pre-Q device).
     private fun requestDefaultRole() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -294,8 +294,21 @@ class MainActivity : ComponentActivity() {
 
                 App.disableAppOpenAd = true
                 smsRoleLauncher.launch(intent)
+                return
             }
         }
+        requestRuntimePermissions()
+    }
+
+    private fun requestRuntimePermissions() {
+        requestSmsPermissions()
+        requestContactsPermission()
+        requestNotificationPermission()
+        requestPhoneStatePermission()
+        if (!shouldShowCallLogDisclosure()) {
+            requestCallLogPermission()
+        }
+        requestOverlayPermission()
     }
 }
 
