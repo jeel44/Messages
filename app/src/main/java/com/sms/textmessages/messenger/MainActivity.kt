@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
     // Launcher for default SMS role
     private val smsRoleLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            android.util.Log.d("ROLE_DEBUG", "Role picker result received, calling requestRuntimePermissions()")
             requestRuntimePermissions()
         }
 
@@ -97,6 +98,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        android.util.Log.d(
+            "ROLE_DEBUG",
+            "onCreate() called, instance hash: ${System.identityHashCode(this)}, savedInstanceState null: ${savedInstanceState == null}"
+        )
 
         _openChatSender.value = extractSenderFromIntent(intent) ?: intent.getStringExtra("open_chat_sender")
         _openChatAutoFocus.value = intent.getBooleanExtra("open_chat_autofocus", false)
@@ -284,6 +290,11 @@ class MainActivity : ComponentActivity() {
 
             val roleManager = getSystemService(RoleManager::class.java)
 
+            android.util.Log.d(
+                "ROLE_DEBUG",
+                "isRoleAvailable=${roleManager?.isRoleAvailable(RoleManager.ROLE_SMS)}, isRoleHeld=${roleManager?.isRoleHeld(RoleManager.ROLE_SMS)}"
+            )
+
             if (roleManager != null &&
                 roleManager.isRoleAvailable(RoleManager.ROLE_SMS) &&
                 !roleManager.isRoleHeld(RoleManager.ROLE_SMS)
@@ -293,10 +304,15 @@ class MainActivity : ComponentActivity() {
                     roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
 
                 App.disableAppOpenAd = true
+                android.util.Log.d("ROLE_DEBUG", "Launching role picker")
                 smsRoleLauncher.launch(intent)
                 return
             }
         }
+        android.util.Log.d(
+            "ROLE_DEBUG",
+            "Skipping role picker, calling requestRuntimePermissions() directly - already default or role unavailable"
+        )
         requestRuntimePermissions()
     }
 
