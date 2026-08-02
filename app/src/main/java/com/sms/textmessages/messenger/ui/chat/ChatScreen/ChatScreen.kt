@@ -37,13 +37,14 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Popup
 import com.sms.textmessages.messenger.R
+import com.sms.textmessages.messenger.ads.AdCache
+import com.sms.textmessages.messenger.ads.AdExpiry
+import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
-import com.sms.textmessages.messenger.ui.ads.ChatBannerAdManager
 import com.sms.textmessages.messenger.ui.ads.AdShimmer
 import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import com.sms.textmessages.messenger.ui.ads.ChatBackAdManager
 import android.telephony.SmsManager
 import android.widget.Toast
 import android.widget.FrameLayout
@@ -218,7 +219,7 @@ fun ChatScreen(
     // banner appears keeps the last message from ending up hidden behind it.
     val bannerVisible = isPersonalChat &&
         RemoteConfigManager.chatBannerEnabled() &&
-        ChatBannerAdManager.bannerAdState.value != null
+        AdCache.bannerState(AdPlacement.CHAT_BANNER).value != null
 
     LaunchedEffect(chatMessages.size, bannerVisible) {
 
@@ -249,16 +250,14 @@ fun ChatScreen(
     // running in the background after the user leaves this chat.
     LaunchedEffect(Unit) {
         while (true) {
-            ChatBannerAdManager.loadBanner(activity)
-            Log.d("CHAT_BANNER", "loadBanner called")
-            delay(30_000)
+            AdCache.ensure(AdPlacement.CHAT_BANNER, activity, forceRefresh = true)
+            Log.d("CHAT_BANNER", "ensure CHAT_BANNER forceRefresh")
+            delay(AdExpiry.BANNER_ON_SCREEN_REFRESH_MS)
         }
     }
 
     LaunchedEffect(Unit) {
-
-        ChatBackAdManager.load(activity)
-
+        AdCache.ensure(AdPlacement.CHAT_BACK_INTERSTITIAL, activity)
     }
 
     Scaffold(
@@ -285,10 +284,8 @@ fun ChatScreen(
                         IconButton(
                             onClick = {
 
-                                ChatBackAdManager.onClick(activity) {
-
+                                AdCache.onClickGated(activity, AdPlacement.CHAT_BACK_INTERSTITIAL) {
                                     onBackClick()
-
                                 }
                             },
                             modifier = Modifier.size(40.dp)
@@ -1143,15 +1140,10 @@ fun MessageInputBar(
 @Composable
 fun ChatBannerAdSection() {
 
-    val bannerView = ChatBannerAdManager.bannerAdState.value
+    val bannerView = AdCache.bannerState(AdPlacement.CHAT_BANNER).value
 
     if (bannerView != null) {
 
-        // Same stable-container + update pattern as HomeScreen's
-        // BannerAdSection - a raw AdView can't be rebound in place, so a
-        // reload always means a new AdView instance; without this, a fresh
-        // banner would silently never replace the stale one once reload
-        // stops relying on a full ChatScreen remount.
         AndroidView(
             factory = { context ->
                 FrameLayout(context).apply {
@@ -1163,6 +1155,9 @@ fun ChatBannerAdSection() {
                     container.removeAllViews()
                     container.addView(bannerView)
                 }
+            },
+            onRelease = { container ->
+                container.removeAllViews()
             },
             modifier = Modifier
                 .fillMaxWidth()

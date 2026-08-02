@@ -5,26 +5,17 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.animation.core.Animatable
 import com.sms.textmessages.messenger.App
 import com.sms.textmessages.messenger.MainActivity
-import com.sms.textmessages.messenger.ads.RemoteConfigManager
-import com.sms.textmessages.messenger.ads.SplashAdManager
 import com.sms.textmessages.messenger.ui.onboarding.GetStartedActivity
 import com.sms.textmessages.messenger.utils.LocaleManager
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
+/**
+ * Launcher entry that routes immediately to GetStarted or MainActivity.
+ * No splash UI, ads, or Remote Config wait — inbox must open without delay.
+ */
 class SplashActivity : ComponentActivity() {
-
-    // Single source of truth for splash timing. animateTo() on this instance
-    // must run inside a Composable (it needs Compose's MonotonicFrameClock,
-    // which a plain Activity coroutine scope does not have) - see
-    // SplashScreenUI's LaunchedEffect. This still drives both the progress
-    // bar's visual state and the real dismiss point: the LaunchedEffect
-    // awaits animateTo() and then reports back via onProgressComplete, so
-    // there remains exactly one Animatable / one timer, not two.
-    private val splashProgress = Animatable(0f)
 
     override fun attachBaseContext(newBase: Context) {
 
@@ -39,92 +30,40 @@ class SplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // TEMPORARY DEBUG LOGGING - diagnosing "only animation shows" splash
-        // regression. Tags every stage so a repro has actual evidence instead
-        // of guessing at layout code.
-        Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} action=${intent?.action} isTaskRoot=$isTaskRoot")
+        Log.d(TAG, "onCreate: action=${intent?.action} isTaskRoot=$isTaskRoot")
 
-        // 🚫 Disable AppOpen from Application while splash runs
-        App.disableAppOpenAd = true
-
-        // If coming from background, skip splash
+        // If coming from background, skip — existing task already has the real screen
         if (!isTaskRoot &&
             intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true &&
             intent?.action == Intent.ACTION_MAIN
         ) {
-            Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} skipping splash - coming from background, finishing")
+            Log.d(TAG, "onCreate: skipping - coming from background")
             finish()
             return
         }
 
         if (intent.action != Intent.ACTION_MAIN) {
-            Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} non-MAIN action - routing straight to MainActivity, finishing")
+            Log.d(TAG, "onCreate: non-MAIN action - routing to MainActivity")
+            // Suppress home app-open on this cold entry so messages stay visible
+            App.disableAppOpenAd = true
             startActivity(Intent(this, MainActivity::class.java))
             finish()
             return
         }
 
-        Log.d(TAG, "onCreate: ts=${System.currentTimeMillis()} calling setContent(SplashScreenUI)")
-
-        setContent {
-            SplashScreenUI(
-                progress = splashProgress,
-                onProgressComplete = { onSplashProgressComplete() }
-            )
-        }
-
-        startSplashLogic()
+        // Suppress home app-open on first activity after launch; App clears
+        // the flag after skipping once so later background returns still work.
+        App.disableAppOpenAd = true
+        routeNext()
     }
 
-    private fun startSplashLogic() {
-
-        Log.d(TAG, "startSplashLogic: ts=${System.currentTimeMillis()} calling RemoteConfigManager.init()")
-
-        RemoteConfigManager.init {
-            Log.d(TAG, "RemoteConfigManager.init callback: ts=${System.currentTimeMillis()} fired - calling SplashAdManager.loadAds()")
-            SplashAdManager.loadAds(this)
-        }
-    }
-
-    // Called from SplashScreenUI's LaunchedEffect once splashProgress's
-    // animateTo() finishes - the progress bar reaching 100% is what gates
-    // showing/skipping the ad, same as before the crash fix, just signaled
-    // back from Compose instead of being awaited directly in this class.
-    private fun onSplashProgressComplete() {
-
-        Log.d(TAG, "onSplashProgressComplete: ts=${System.currentTimeMillis()} progress animation finished - calling SplashAdManager.showAdIfAvailable()")
-
-        SplashAdManager.showAdIfAvailable(
-            activity = this,
-            onAdDismissed = {
-                Log.d(TAG, "showAdIfAvailable.onAdDismissed: ts=${System.currentTimeMillis()} calling goToHome()")
-                goToHome()
-            },
-            onAdFailed = {
-                Log.d(TAG, "showAdIfAvailable.onAdFailed: ts=${System.currentTimeMillis()} calling goToHome()")
-                goToHome()
-            }
-        )
-    }
-
-    private fun goToHome() {
-
-        Log.d(TAG, "goToHome: ts=${System.currentTimeMillis()} isFirstLaunch=${PreferenceManager.isFirstLaunch(this)}")
-
-        // ✅ Re-enable AppOpen for future background launches
-        App.disableAppOpenAd = false
+    private fun routeNext() {
+        Log.d(TAG, "routeNext: isFirstLaunch=${PreferenceManager.isFirstLaunch(this)}")
 
         if (PreferenceManager.isFirstLaunch(this)) {
-
-            startActivity(
-                Intent(this, GetStartedActivity::class.java)
-            )
-
+            startActivity(Intent(this, GetStartedActivity::class.java))
         } else {
-
-            startActivity(
-                Intent(this, MainActivity::class.java)
-            )
+            startActivity(Intent(this, MainActivity::class.java))
         }
 
         finish()
@@ -134,4 +73,3 @@ class SplashActivity : ComponentActivity() {
         private const val TAG = "SPLASH_DEBUG"
     }
 }
-

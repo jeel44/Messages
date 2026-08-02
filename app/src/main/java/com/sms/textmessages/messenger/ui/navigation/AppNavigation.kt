@@ -30,7 +30,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AppNavigation(
     onRequestDefault: () -> Unit,
-    onRequestOverlayPermission: () -> Unit = {},
+    onRequestCallEndPrerequisites: () -> Unit = {},
+    onRequestCallScreeningRole: () -> Unit = {},
     openChatSender: String? = null,
     openChatAutoFocus: Boolean = false,
     onChatSenderConsumed: () -> Unit = {}
@@ -49,12 +50,11 @@ fun AppNavigation(
         }
     }
 
-    // Requests Overlay permission contextually from Home screen, decoupled
-    // from the onboarding permission chain - fires once per composition
-    // entry, but onRequestOverlayPermission's own one-time flag ensures it
-    // only actually prompts the user once, ever.
+    // Call-end prerequisites from Home: Appear-on-top Settings on pre-11,
+    // ROLE_CALL_SCREENING (auto-grants overlay) on Android 11+. One-shot
+    // flags inside MainActivity ensure each path prompts at most once.
     LaunchedEffect(Unit) {
-        onRequestOverlayPermission()
+        onRequestCallEndPrerequisites()
     }
 
     NavHost(
@@ -180,7 +180,8 @@ fun AppNavigation(
                 },
                 onOpenBlocked = {
                     navController.navigate(Screen.Blocked.route)
-                }
+                },
+                onRequestCallScreeningRole = onRequestCallScreeningRole
             )
         }
 

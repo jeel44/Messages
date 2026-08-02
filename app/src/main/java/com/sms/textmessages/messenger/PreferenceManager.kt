@@ -16,6 +16,13 @@ object PreferenceManager {
     private const val KEY_CALL_END_ENABLED = "call_end_enabled"
     private const val KEY_CALL_LOG_DISCLOSURE_SHOWN = "call_log_disclosure_shown"
     private const val KEY_OVERLAY_PERMISSION_REQUESTED = "overlay_permission_requested"
+    private const val KEY_CALL_SCREENING_ROLE_REQUESTED = "call_screening_role_requested"
+    private const val KEY_BLOCK_CALLS_FROM_BLOCKED = "block_calls_from_blocked"
+    private const val KEY_SILENCE_UNKNOWN_CALLERS = "silence_unknown_callers"
+    private const val KEY_OVERLAY_LAST_RESORT = "overlay_last_resort_offered"
+    private const val KEY_OEM_BATTERY_HELP_DISMISSED = "oem_battery_help_dismissed"
+    private const val KEY_OEM_BATTERY_HELP_COUNT = "oem_battery_help_count"
+    private const val KEY_OEM_BATTERY_HELP_LAST_MS = "oem_battery_help_last_ms"
 
     fun isFirstLaunch(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -171,5 +178,79 @@ object PreferenceManager {
     fun setOverlayPermissionRequested(context: Context) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_OVERLAY_PERMISSION_REQUESTED, true).apply()
+    }
+
+    // One-shot Home prompt for ROLE_CALL_SCREENING (Android 11+). Settings
+    // can still request the role manually after a denial.
+    fun isCallScreeningRoleRequested(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_CALL_SCREENING_ROLE_REQUESTED, false)
+    }
+
+    fun setCallScreeningRoleRequested(context: Context) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_CALL_SCREENING_ROLE_REQUESTED, true).apply()
+    }
+
+    // When true (default), CallScreeningService rejects numbers on the app
+    // blocked list so SMS block and phone-call block stay aligned.
+    fun isBlockCallsFromBlockedEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_BLOCK_CALLS_FROM_BLOCKED, true)
+    }
+
+    fun setBlockCallsFromBlockedEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_BLOCK_CALLS_FROM_BLOCKED, enabled).apply()
+    }
+
+    // Opt-in: silence (do not block) callers who are not in Contacts, and
+    // silence numbers whose network verification failed.
+    fun isSilenceUnknownCallersEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_SILENCE_UNKNOWN_CALLERS, false)
+    }
+
+    fun setSilenceUnknownCallersEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_SILENCE_UNKNOWN_CALLERS, enabled).apply()
+    }
+
+    fun isOverlayLastResortOffered(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_OVERLAY_LAST_RESORT, false)
+    }
+
+    fun setOverlayLastResortOffered(context: Context) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_OVERLAY_LAST_RESORT, true).apply()
+    }
+
+    fun isOemBatteryHelpDismissedForever(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_OEM_BATTERY_HELP_DISMISSED, false)
+    }
+
+    fun setOemBatteryHelpDismissedForever(context: Context) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_OEM_BATTERY_HELP_DISMISSED, true).apply()
+    }
+
+    fun oemBatteryHelpPromptCount(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_OEM_BATTERY_HELP_COUNT, 0)
+    }
+
+    fun oemBatteryHelpLastPromptMs(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getLong(KEY_OEM_BATTERY_HELP_LAST_MS, 0L)
+    }
+
+    fun markOemBatteryHelpPrompted(context: Context) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putInt(KEY_OEM_BATTERY_HELP_COUNT, prefs.getInt(KEY_OEM_BATTERY_HELP_COUNT, 0) + 1)
+            .putLong(KEY_OEM_BATTERY_HELP_LAST_MS, System.currentTimeMillis())
+            .apply()
     }
 }

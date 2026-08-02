@@ -13,6 +13,7 @@ import com.sms.textmessages.messenger.data.db.AppDatabase
 import com.sms.textmessages.messenger.data.db.ThreadEntity
 import com.sms.textmessages.messenger.ui.chat.ChatMessage
 import com.sms.textmessages.messenger.ui.media.MediaAttachment
+import com.sms.textmessages.messenger.utils.BlockedNumberSync
 import com.sms.textmessages.messenger.utils.PreferenceManager
 import kotlinx.coroutines.launch
 
@@ -767,11 +768,15 @@ object SmsRepository {
     suspend fun blockThread(context: Context, phone: String) {
         PreferenceManager.blockNumber(context, phone)
         AppDatabase.getDatabase(context).threadDao().setBlockedForNumber(phone.takeLast(10), true)
+        // Platform block list so the system dialer and CallScreeningService
+        // stay aligned when this app is allowed to write BlockedNumberContract.
+        BlockedNumberSync.addToSystemBlocked(context, phone)
     }
 
     suspend fun unblockThread(context: Context, phone: String) {
         PreferenceManager.unblockNumber(context, phone)
         AppDatabase.getDatabase(context).threadDao().setBlockedForNumber(phone.takeLast(10), false)
+        BlockedNumberSync.removeFromSystemBlocked(context, phone)
     }
 
     suspend fun setPinned(context: Context, phone: String, pinned: Boolean) {

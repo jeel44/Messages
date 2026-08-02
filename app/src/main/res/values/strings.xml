@@ -1,4 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Messages</string>
     <string name="select_language">Select Language</string>
+
+    <!-- Play listing / feature copy reference (also used if surfaced in UI later) -->
+    <string name="feature_call_screening_title">Spam and blocked-call screening</string>
+    <string name="feature_call_screening_body">Set Messages as your call screener to reject numbers on your blocked list before they ring, and optionally silence unknown callers.</string>
+    <string name="feature_call_end_title">After-call screen</string>
+    <string name="feature_call_end_body">See who called and message, call back, save, or block — right when a call ends.</string>
+
+    <!-- Sole source of AdMob unit IDs (not Remote Config). Swap for production units when ready. -->
+    <string name="ad_unit_app_open" translatable="false">ca-app-pub-3940256099942544/9257395921</string>
+    <string name="ad_unit_banner" translatable="false">ca-app-pub-3940256099942544/6300978111</string>
+    <!-- Dedicated Medium Rectangle (300×250) unit for call-end screen. Replace with your real MREC unit before production. -->
+    <string name="ad_unit_call_end_mrec" translatable="false">ca-app-pub-3940256099942544/6300978111</string>
+    <string name="ad_unit_interstitial" translatable="false">ca-app-pub-3940256099942544/1033173712</string>
+    <string name="ad_unit_native" translatable="false">ca-app-pub-3940256099942544/2247696110</string>
 </resources>

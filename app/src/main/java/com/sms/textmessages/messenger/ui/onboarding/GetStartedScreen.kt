@@ -50,7 +50,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.ads.nativead.MediaView
 import com.google.android.gms.ads.nativead.NativeAdView
 import com.sms.textmessages.messenger.R
-import com.sms.textmessages.messenger.ads.GetStartedAdManager
+import com.sms.textmessages.messenger.ads.AdCache
+import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ui.ads.AdShimmer
 import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import com.sms.textmessages.messenger.ui.language.LanguageActivity
@@ -68,12 +69,8 @@ fun GetStartedScreen() {
     val context = LocalContext.current
     val activity = context as Activity
 
-    // 🔥 Load Native Ad
     LaunchedEffect(Unit) {
-
-        if (GetStartedAdManager.nativeAdState == null) {
-            GetStartedAdManager.loadNativeAd(activity)
-        }
+        AdCache.ensure(AdPlacement.GET_STARTED_NATIVE, activity)
     }
 
     // ✅ ONLY PERMISSION LAUNCHER (NO DEFAULT ROLE HERE)
@@ -244,7 +241,7 @@ fun GetStartedScreen() {
                     .background(Color.White)
             ) {
 
-                val nativeAd = GetStartedAdManager.nativeAdState
+                val nativeAd = AdCache.nativeState(AdPlacement.GET_STARTED_NATIVE).value
 
                 if (nativeAd != null) {
 

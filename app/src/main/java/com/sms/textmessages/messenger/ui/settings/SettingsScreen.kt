@@ -3,50 +3,100 @@ package com.sms.textmessages.messenger.ui.settings
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.*
+import androidx.compose.material.icons.filled.PhoneLocked
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sms.textmessages.messenger.R
-import com.sms.textmessages.messenger.ui.ads.SettingsAdManager
+import com.sms.textmessages.messenger.ads.AdCache
+import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ui.common.AppSwitch
 import com.sms.textmessages.messenger.ui.theme.GeneralSans
+import com.sms.textmessages.messenger.utils.CallEndMetrics
+import com.sms.textmessages.messenger.utils.CallScreeningRole
+import com.sms.textmessages.messenger.utils.OemBatteryGuide
 import com.sms.textmessages.messenger.utils.PRIVACY_POLICY_URL
 import com.sms.textmessages.messenger.utils.PreferenceManager
-import androidx.activity.compose.BackHandler
-import androidx.compose.ui.text.font.FontWeight
+import com.sms.textmessages.messenger.App
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenArchived: () -> Unit = {},
-    onOpenBlocked: () -> Unit = {}
+    onOpenBlocked: () -> Unit = {},
+    onRequestCallScreeningRole: () -> Unit = {}
 ) {
 
     val context = LocalContext.current
     val activity = context as Activity
+    val lifecycleOwner = LocalLifecycleOwner.current
 
+    var isCallScreener by remember {
+        mutableStateOf(CallScreeningRole.isHeld(context))
+    }
 
+    // Refresh after returning from the system role picker.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isCallScreener = CallScreeningRole.isHeld(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     BackHandler {
-        SettingsAdManager.show(activity) {
+        AdCache.showInterstitial(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
             onBack()
         }
     }
 
-    // Load interstitial
     LaunchedEffect(Unit) {
-        SettingsAdManager.load(activity)
+        AdCache.ensure(AdPlacement.SETTINGS_INTERSTITIAL, activity)
     }
 
     Scaffold(
@@ -66,7 +116,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = {
-                            SettingsAdManager.show(activity) {
+                            AdCache.showInterstitial(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
                                 onBack()
                             }
                         }
@@ -92,6 +142,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
         ) {
 
             Text(
@@ -177,18 +228,108 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
             )
 
+            if (CallScreeningRole.isAvailable(context)) {
+                SettingsItemWithSubtitle(
+                    icon = Icons.Filled.PhoneLocked,
+                    text = if (isCallScreener) "Call screener is on" else "Set as call screener",
+                    subtitle = if (isCallScreener) {
+                        "Blocks spam and numbers on your blocked list before they ring"
+                    } else {
+                        "Block spam and blocked numbers before they ring"
+                    },
+                    onClick = {
+                        if (!isCallScreener) {
+                            onRequestCallScreeningRole()
+                        }
+                    }
+                )
+
+                var blockFromBlocked by remember {
+                    mutableStateOf(PreferenceManager.isBlockCallsFromBlockedEnabled(context))
+                }
+                SettingsToggleItem(
+                    icon = Icons.Filled.PhoneLocked,
+                    text = "Block calls from blocked numbers",
+                    subtitle = "Reject phone calls from numbers you've blocked in Messages",
+                    checked = blockFromBlocked,
+                    enabled = isCallScreener,
+                    onCheckedChange = { enabled ->
+                        blockFromBlocked = enabled
+                        PreferenceManager.setBlockCallsFromBlockedEnabled(context, enabled)
+                    }
+                )
+
+                var silenceUnknown by remember {
+                    mutableStateOf(PreferenceManager.isSilenceUnknownCallersEnabled(context))
+                }
+                SettingsToggleItem(
+                    icon = Icons.AutoMirrored.Filled.VolumeOff,
+                    text = "Silence unknown callers",
+                    subtitle = "Ring silently for numbers not in your contacts",
+                    checked = silenceUnknown,
+                    enabled = isCallScreener,
+                    onCheckedChange = { enabled ->
+                        silenceUnknown = enabled
+                        PreferenceManager.setSilenceUnknownCallersEnabled(context, enabled)
+                    }
+                )
+            }
+
             var callEndEnabled by remember { mutableStateOf(PreferenceManager.isCallEndEnabled(context)) }
 
             SettingsToggleItem(
                 icon = Icons.Filled.Call,
                 text = "Call end screen",
-                subtitle = "Show caller info and ads after calls",
+                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    "Show caller info after calls (needs call screener on Android 11+)"
+                } else {
+                    "Show caller info and ads after calls"
+                },
                 checked = callEndEnabled,
                 onCheckedChange = { enabled ->
                     callEndEnabled = enabled
                     PreferenceManager.setCallEndEnabled(context, enabled)
                 }
             )
+
+            // Advanced: only for OEMs that still miss after during-call overlay.
+            // Not part of primary onboarding (Truecaller path is the main fix).
+            if (OemBatteryGuide.isAggressiveOem()) {
+                Text(
+                    text = "Advanced",
+                    fontSize = 13.sp,
+                    fontFamily = GeneralSans,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+                )
+                SettingsItemWithSubtitle(
+                    icon = Icons.Filled.PhoneLocked,
+                    text = "Improve call reliability",
+                    subtitle = "If caller ID sometimes misses, allow background / Autostart for this device",
+                    onClick = {
+                        val steps = OemBatteryGuide.steps(context)
+                        val first = steps.firstOrNull()?.intent
+                        if (first != null) {
+                            try {
+                                App.disableAppOpenAd = true
+                                context.startActivity(first.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            } catch (_: Exception) {
+                                OemBatteryGuide.openAppDetails(context)
+                            }
+                        } else {
+                            OemBatteryGuide.openAppDetails(context)
+                        }
+                    }
+                )
+                Text(
+                    text = "Diagnostics: ${CallEndMetrics.summary(context)}",
+                    fontSize = 11.sp,
+                    fontFamily = GeneralSans,
+                    color = Color.LightGray,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
+                )
+            }
 
             Text(
                 text = "Privacy",
@@ -277,22 +418,18 @@ fun SettingsItem(
     }
 }
 
-////////////////////////////////////////////////////////
-// SETTINGS TOGGLE ITEM
-////////////////////////////////////////////////////////
-
 @Composable
-fun SettingsToggleItem(
+fun SettingsItemWithSubtitle(
     icon: ImageVector,
     text: String,
     subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onClick: () -> Unit
 ) {
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 16.dp),
 
         verticalAlignment = Alignment.CenterVertically
@@ -319,6 +456,67 @@ fun SettingsToggleItem(
 
         Spacer(modifier = Modifier.width(16.dp))
 
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = text,
+                fontSize = 16.sp,
+                fontFamily = GeneralSans,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                fontFamily = GeneralSans,
+                fontWeight = FontWeight.Normal,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+////////////////////////////////////////////////////////
+// SETTINGS TOGGLE ITEM
+////////////////////////////////////////////////////////
+
+@Composable
+fun SettingsToggleItem(
+    icon: ImageVector,
+    text: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
+) {
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        Surface(
+            shape = CircleShape,
+            color = Color(0xFFF1F3F6),
+            modifier = Modifier.size(40.dp)
+        ) {
+
+            Box(
+                contentAlignment = Alignment.Center
+            ) {
+
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (enabled) Color(0xFF3E6AE1) else Color.Gray
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
         Column(
             modifier = Modifier.weight(1f)
         ) {
@@ -327,7 +525,8 @@ fun SettingsToggleItem(
                 text = text,
                 fontSize = 16.sp,
                 fontFamily = GeneralSans,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) Color.Unspecified else Color.Gray
             )
 
             Text(
@@ -343,7 +542,8 @@ fun SettingsToggleItem(
 
         AppSwitch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
         )
     }
 }

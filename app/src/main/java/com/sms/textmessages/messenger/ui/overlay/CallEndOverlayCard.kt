@@ -1,24 +1,21 @@
 package com.sms.textmessages.messenger.ui.overlay
 
-import android.view.LayoutInflater
-import android.view.View
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.TextView
+import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -53,9 +50,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.google.android.gms.ads.nativead.MediaView
-import com.google.android.gms.ads.nativead.NativeAd
-import com.google.android.gms.ads.nativead.NativeAdView
+import com.google.android.gms.ads.AdView
 import com.sms.textmessages.messenger.R
 import com.sms.textmessages.messenger.receiver.CallEndType
 import com.sms.textmessages.messenger.ui.ads.AdShimmer
@@ -91,7 +86,7 @@ fun CallEndOverlayCard(
     phoneNumber: String?,
     callType: CallEndType,
     durationMs: Long,
-    nativeAd: NativeAd?,
+    bannerAd: AdView?,
     unreadCount: Int?,
     onMessage: () -> Unit,
     onCallBack: () -> Unit,
@@ -316,7 +311,7 @@ fun CallEndOverlayCard(
                     .clip(RoundedCornerShape(18.dp))
                     .background(AdSlotDark)
             ) {
-                CallEndNativeAdSection(nativeAd)
+                CallEndBannerAdSection(bannerAd)
             }
 
             Spacer(modifier = Modifier.height(if (isCompact) 12.dp else 16.dp))
@@ -415,85 +410,49 @@ private fun formatCallDuration(durationMs: Long): String {
 }
 
 ////////////////////////////////////////////////////////
-// 🔵 NATIVE AD (same NativeAdView binding contract as HomeScreen's
-// bindHomeNativeAd/NativeAdSection - own dark-styled layout + AdShimmer for
-// the loading state, filling the dark ad slot box above)
+// 🔵 BANNER AD - preloaded via AdCache during the call popup
 ////////////////////////////////////////////////////////
 
-private fun NativeAdView.bindCallEndNativeAd(nativeAd: NativeAd) {
-
-    val headline = findViewById<TextView>(R.id.ad_headline)
-    val body = findViewById<TextView>(R.id.ad_body)
-    val cta = findViewById<Button>(R.id.ad_call_to_action)
-    val icon = findViewById<ImageView>(R.id.ad_icon)
-    val media = findViewById<MediaView>(R.id.ad_media)
-
-    headlineView = headline
-    bodyView = body
-    callToActionView = cta
-    iconView = icon
-    mediaView = media
-
-    headline.text = nativeAd.headline
-
-    val adBody = nativeAd.body
-    if (adBody.isNullOrEmpty()) {
-        body.visibility = View.GONE
-    } else {
-        body.text = adBody
-        body.visibility = View.VISIBLE
-    }
-
-    val adCta = nativeAd.callToAction
-    if (adCta.isNullOrEmpty()) {
-        cta.visibility = View.GONE
-    } else {
-        cta.text = adCta
-        cta.visibility = View.VISIBLE
-    }
-
-    val adIcon = nativeAd.icon
-    if (adIcon == null) {
-        icon.visibility = View.GONE
-    } else {
-        icon.setImageDrawable(adIcon.drawable)
-        icon.visibility = View.VISIBLE
-    }
-
-    val mediaContent = nativeAd.mediaContent
-    if (mediaContent == null) {
-        media.visibility = View.GONE
-    } else {
-        media.mediaContent = mediaContent
-        media.visibility = View.VISIBLE
-    }
-
-    setNativeAd(nativeAd)
-}
-
 @Composable
-private fun CallEndNativeAdSection(nativeAd: NativeAd?) {
+private fun CallEndBannerAdSection(bannerAd: AdView?) {
+    // Medium Rectangle (300×250) — AdMob MREC / "square" banner for call-end.
+    val mrecWidth = 300.dp
+    val mrecHeight = 250.dp
 
-    if (nativeAd != null) {
-
-        AndroidView(
-            factory = { context ->
-                val inflater = LayoutInflater.from(context)
-                val adView =
-                    inflater.inflate(R.layout.native_call_end_ad_layout, null) as NativeAdView
-                adView.bindCallEndNativeAd(nativeAd)
-                adView
-            },
-            update = { adView ->
-                adView.bindCallEndNativeAd(nativeAd)
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-    } else {
-        AdShimmer(
-            modifier = Modifier.fillMaxSize(),
-            variant = AdShimmerVariant.MEDIA_BLOCK
-        )
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bannerAd != null) {
+            AndroidView(
+                factory = { context ->
+                    FrameLayout(context).apply {
+                        (bannerAd.parent as? android.view.ViewGroup)?.removeView(bannerAd)
+                        addView(bannerAd)
+                    }
+                },
+                update = { container ->
+                    if (container.getChildAt(0) !== bannerAd) {
+                        container.removeAllViews()
+                        (bannerAd.parent as? android.view.ViewGroup)?.removeView(bannerAd)
+                        container.addView(bannerAd)
+                    }
+                },
+                onRelease = { container ->
+                    container.removeAllViews()
+                },
+                modifier = Modifier
+                    .width(mrecWidth)
+                    .height(mrecHeight)
+            )
+        } else {
+            AdShimmer(
+                modifier = Modifier
+                    .width(mrecWidth)
+                    .height(mrecHeight)
+                    .clip(RoundedCornerShape(12.dp)),
+                variant = AdShimmerVariant.MEDIA_BLOCK
+            )
+        }
     }
 }

@@ -42,9 +42,10 @@ import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
 import com.google.android.gms.ads.nativead.MediaView
 import com.sms.textmessages.messenger.R
+import com.sms.textmessages.messenger.ads.AdCache
+import com.sms.textmessages.messenger.ads.AdExpiry
+import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
-import com.sms.textmessages.messenger.ui.ads.HomeAdManager
-import com.sms.textmessages.messenger.ui.ads.DefaultBannerAdManager
 import com.sms.textmessages.messenger.ui.ads.AdShimmer
 import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import java.text.SimpleDateFormat
@@ -66,8 +67,6 @@ import com.sms.textmessages.messenger.ui.settings.SettingsScreen
 import com.sms.textmessages.messenger.ui.archived.ArchivedScreen
 import com.sms.textmessages.messenger.ui.blocked.BlockedNumbersScreen
 import androidx.compose.material.icons.filled.*
-import com.sms.textmessages.messenger.ui.ads.NewChatAdManager
-import com.sms.textmessages.messenger.ui.ads.OpenChatAdManager
 import com.sms.textmessages.messenger.ui.newchat.NewConversationScreen
 import com.sms.textmessages.messenger.ui.media.SharedMediaScreen
 import android.widget.Toast
@@ -167,14 +166,8 @@ fun DefaultUI(onRequestDefault: () -> Unit) {
     val activity = context as Activity
 
     LaunchedEffect(Unit) {
-
-        if (HomeAdManager.nativeAdState.value == null) {
-            HomeAdManager.loadNative(activity)
-        }
-
-        if (DefaultBannerAdManager.bannerAdState.value == null) {
-            DefaultBannerAdManager.loadBanner(activity)
-        }
+        AdCache.ensure(AdPlacement.HOME_NATIVE, activity)
+        AdCache.ensure(AdPlacement.DEFAULT_BANNER, activity)
     }
 
     Scaffold(
@@ -389,11 +382,14 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
 
     val contentResolver = context.contentResolver
 
-    LaunchedEffect(Unit) {
-
-        OpenChatAdManager.load(activity)
-        NewChatAdManager.load(activity)
-
+    // Interstitials need Remote Config IDs; reload when config becomes ready
+    // so a cold start that reaches the inbox before fetch completes still
+    // picks up real unit IDs without delaying the message list.
+    val remoteConfigReadyForInterstitials = RemoteConfigManager.isReady
+    LaunchedEffect(remoteConfigReadyForInterstitials) {
+        if (!remoteConfigReadyForInterstitials) return@LaunchedEffect
+        AdCache.ensure(AdPlacement.OPEN_CHAT_INTERSTITIAL, activity)
+        AdCache.ensure(AdPlacement.NEW_CHAT_INTERSTITIAL, activity)
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -403,12 +399,10 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
 
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (!RemoteConfigManager.isReady) return@LifecycleEventObserver
 
-                // Reload native ad when returning to home
-                HomeAdManager.loadNative(activity)
-
-                // Reload banner if needed
-                HomeAdManager.loadBanner(activity)
+                AdCache.ensure(AdPlacement.HOME_NATIVE, activity)
+                AdCache.ensure(AdPlacement.HOME_BANNER, activity)
             }
         }
 
@@ -421,7 +415,7 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
 
 
 
-    val nativeAd = HomeAdManager.nativeAdState.value
+    val nativeAd = AdCache.nativeState(AdPlacement.HOME_NATIVE).value
     val filters = listOf("All SMS", "Personal", "Transaction", "OTPs", "Offers")
     var selectedFilter by remember { mutableStateOf("All SMS") }
 
@@ -696,26 +690,22 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
     // is what makes them actually re-run on return-from-chat instead of only
     // once per InboxUI's lifetime.
 
-    // Native ad: reload-on-return only, no timer - a fresh native ad every
-    // time the user lands back on the inbox, and nothing else.
-    LaunchedEffect(Unit) {
-        HomeAdManager.loadNative(activity)
+    // Native / banner: ensure when Remote Config is ready. Ads fill into the
+    // already-visible inbox; never block the conversation list.
+    val remoteConfigReady = RemoteConfigManager.isReady
+    LaunchedEffect(remoteConfigReady) {
+        if (!remoteConfigReady) return@LaunchedEffect
+        AdCache.ensure(AdPlacement.HOME_NATIVE, activity)
     }
 
-    // Banner ad: reload-on-return, then a 30s (Google's published minimum
-    // banner refresh interval) auto-refresh loop for as long as this
-    // Scaffold stays mounted. This is a single coroutine, not two competing
-    // timers - the very first iteration below IS the reload-on-return, and
-    // every later iteration is 30s after the previous one, so there is no
-    // separate independent clock that could fire close together with a
-    // return-triggered reload. Cancelled automatically (LaunchedEffect's
-    // coroutine is cancelled on dispose) the moment this Scaffold leaves
-    // composition again, e.g. by opening a chat - it does not keep running
-    // in the background while a chat is open.
-    LaunchedEffect(Unit) {
+    // Banner: ensure once RC is ready, then force-refresh on a 60s cadence
+    // while visible (AdMob console refresh range is 30–150s; 60s is not a
+    // documented "expiry", only our on-screen refresh preference).
+    LaunchedEffect(remoteConfigReady) {
+        if (!remoteConfigReady) return@LaunchedEffect
         while (true) {
-            HomeAdManager.loadBanner(activity)
-            delay(30_000)
+            AdCache.ensure(AdPlacement.HOME_BANNER, activity, forceRefresh = true)
+            delay(AdExpiry.BANNER_ON_SCREEN_REFRESH_MS)
         }
     }
 
@@ -954,7 +944,7 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                 FloatingActionButton(
                   onClick = {
 
-                      NewChatAdManager.onClick(activity) {
+                      AdCache.onClickGated(activity, AdPlacement.NEW_CHAT_INTERSTITIAL) {
 
                           openNewChat = true
 
@@ -1117,7 +1107,7 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                                                 SmsRepository.markThreadAsRead(context, sms.threadId)
                                             }
 
-                                            // Loaded here, before OpenChatAdManager's callback fires,
+                                            // Loaded here, before the open-chat ad gate fires,
                                             // so ChatScreen's very first composition already has the
                                             // full history - messages and selectedChat are assigned
                                             // together below, so there's no frame where ChatScreen
@@ -1126,7 +1116,7 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                                                 SmsRepository.loadThreadMessages(context, sms.threadId)
                                             }
 
-                                            OpenChatAdManager.onClick(activity) {
+                                            AdCache.onClickGated(activity, AdPlacement.OPEN_CHAT_INTERSTITIAL) {
                                                 messages = loadedMessages
                                                 selectedChat = sms
                                             }
@@ -1828,51 +1818,7 @@ fun NativeAdSection(nativeAd: NativeAd?) {
 @Composable
 fun BannerAdSection() {
 
-    val bannerView = DefaultBannerAdManager.bannerAdState.value
-
-    if (bannerView != null) {
-
-        // A raw AdView can't be "rebound" in place the way a NativeAdView can
-        // (there's no equivalent of re-setting its content) - a reload always
-        // means a genuinely new AdView instance. factory only runs once per
-        // composition node, so without this stable container + update lambda,
-        // a freshly-loaded banner would silently never replace the stale one
-        // once reload-on-return stops relying on a full Scaffold remount.
-        AndroidView(
-            factory = { context ->
-                FrameLayout(context).apply {
-                    addView(bannerView)
-                }
-            },
-            update = { container ->
-                if (container.getChildAt(0) !== bannerView) {
-                    container.removeAllViews()
-                    container.addView(bannerView)
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-        )
-    } else {
-        AdShimmer(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp),
-            variant = AdShimmerVariant.BANNER
-        )
-    }
-}
-
-// Same stable-container + update pattern as BannerAdSection, bound to
-// HomeAdManager (home_banner_* keys) instead of DefaultBannerAdManager
-// (default_banner_* keys) - this is the everyday inbox screen's banner,
-// kept separate from DefaultUI's since InboxUI's visibility gate already
-// uses RemoteConfigManager.homeBannerEnabled().
-@Composable
-fun HomeBannerAdSection() {
-
-    val bannerView = HomeAdManager.bannerAdState.value
+    val bannerView = AdCache.bannerState(AdPlacement.DEFAULT_BANNER).value
 
     if (bannerView != null) {
 
@@ -1889,15 +1835,42 @@ fun HomeBannerAdSection() {
                 }
             },
             onRelease = { container ->
-                // InboxUI's Scaffold subtree (this composable included) is torn
-                // down and later remounted whenever a chat is opened/closed.
-                // HomeAdManager.bannerAdState is a singleton that survives that
-                // teardown, so without this, the same AdView instance can come
-                // back still attached to this now-discarded container - the next
-                // factory's addView() on it would then crash with "The specified
-                // child already has a parent." Detaching here (not destroying;
-                // the AdView itself is HomeAdManager's to destroy) keeps it
-                // reusable the moment this container is released.
+                container.removeAllViews()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp)
+        )
+    } else {
+        AdShimmer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
+            variant = AdShimmerVariant.BANNER
+        )
+    }
+}
+
+@Composable
+fun HomeBannerAdSection() {
+
+    val bannerView = AdCache.bannerState(AdPlacement.HOME_BANNER).value
+
+    if (bannerView != null) {
+
+        AndroidView(
+            factory = { context ->
+                FrameLayout(context).apply {
+                    addView(bannerView)
+                }
+            },
+            update = { container ->
+                if (container.getChildAt(0) !== bannerView) {
+                    container.removeAllViews()
+                    container.addView(bannerView)
+                }
+            },
+            onRelease = { container ->
                 container.removeAllViews()
             },
             modifier = Modifier

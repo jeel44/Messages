@@ -23,7 +23,8 @@ import androidx.compose.ui.text.font.*
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sms.textmessages.messenger.R
-import com.sms.textmessages.messenger.ui.ads.LanguageAdManager
+import com.sms.textmessages.messenger.ads.AdCache
+import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ui.ads.AdShimmer
 import com.sms.textmessages.messenger.ui.ads.AdShimmerVariant
 import com.google.android.gms.ads.nativead.NativeAd
@@ -46,9 +47,8 @@ fun LanguageScreen() {
     val context = LocalContext.current
     val activity = context as Activity
 
-    // 🔥 Load Ad
     LaunchedEffect(Unit) {
-        LanguageAdManager.loadAd(activity)
+        AdCache.ensure(AdPlacement.LANGUAGE_NATIVE, activity)
     }
 
     var selectedLanguage by remember { mutableStateOf<String?>(null) }
@@ -149,7 +149,7 @@ fun LanguageScreen() {
                         )
                         .clickable {
                             selectedLanguage = name
-                            LanguageAdManager.loadAd(activity) // reload ad on select
+                            AdCache.ensure(AdPlacement.LANGUAGE_NATIVE, activity)
                         }
                         .padding(horizontal = 16.dp, vertical = 18.dp)
                 ) {
@@ -204,7 +204,7 @@ fun LanguageScreen() {
         Spacer(modifier = Modifier.height(16.dp))
 
         // 🔵 BIG NATIVE AD
-        val nativeAd: NativeAd? = LanguageAdManager.nativeAdState.value
+        val nativeAd: NativeAd? = AdCache.nativeState(AdPlacement.LANGUAGE_NATIVE).value
 
         if (nativeAd != null) {
 

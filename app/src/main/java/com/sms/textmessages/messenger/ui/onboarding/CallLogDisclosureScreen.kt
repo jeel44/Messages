@@ -102,7 +102,7 @@ fun CallLogDisclosureScreen(
 
         ReasonLine(
             icon = Icons.Outlined.PowerSettingsNew,
-            text = "Not spam detection — just your own saved names"
+            text = "Used only to show names on your after-call screen"
         )
 
         Spacer(modifier = Modifier.weight(1f))

@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH"/>
     <uses-permission android:name="android.permission.READ_CELL_BROADCASTS"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <application
         android:name=".App"
@@ -199,6 +203,37 @@
         <service
             android:name=".ui.overlay.CategoryOverlayService"
             android:exported="false"/>
+
+        <!-- ================= CALL SCREENING SERVICE ================= -->
+
+        <!-- Bound by Telecom while this app holds ROLE_CALL_SCREENING.
+             Screens incoming calls (block list / optional silence unknowns)
+             and is the Play-justified reason for that role; on Android 11+
+             holding the role also auto-grants SYSTEM_ALERT_WINDOW for the
+             call-end overlay. -->
+        <service
+            android:name=".service.CallScreeningServiceImpl"
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService"/>
+            </intent-filter>
+
+        </service>
+
+        <!-- Short-lived FG service while call overlay is visible only. -->
+        <service
+            android:name=".service.CallOverlayForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall"/>
+
+        <activity
+            android:name=".ui.overlay.CallEndActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Smstextmessagesmessenger"/>
 
     </application>
 
