@@ -16,4 +16,8 @@
     <string name="ad_unit_call_end_mrec" translatable="false">ca-app-pub-3940256099942544/6300978111</string>
     <string name="ad_unit_interstitial" translatable="false">ca-app-pub-3940256099942544/1033173712</string>
     <string name="ad_unit_native" translatable="false">ca-app-pub-3940256099942544/2247696110</string>
+
+    <!-- InCallService / ongoing-call foreground notification channel -->
+    <string name="notif_channel_ongoing_calls_name">Ongoing calls</string>
+    <string name="notif_channel_ongoing_calls_description">Shown while a phone call is in progress</string>
 </resources>
