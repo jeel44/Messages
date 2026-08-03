@@ -5,7 +5,7 @@ import android.util.Log
 
 /**
  * After-call UI entry: Activity first, overlay only if Activity is blocked.
- * No notifications. No during-call bubble (not required for after-call).
+ * During-call bubble is owned by [DuringCallOverlayHost] and dismissed on hang-up.
  */
 object CallEndActivityLauncher {
 

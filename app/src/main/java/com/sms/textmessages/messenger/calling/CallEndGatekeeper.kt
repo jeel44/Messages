@@ -13,7 +13,8 @@ import com.sms.textmessages.messenger.utils.PreferenceManager
 
 /**
  * Single launcher for the after-call screen. All entry points feed here.
- * Always starts a real Activity (popup or fullscreen) — never a WindowManager overlay.
+ * Dismisses any during-call bubble first, then starts Popup/Fullscreen Activity
+ * (with overlay fallback only if the Activity start is blocked).
  */
 object CallEndGatekeeper {
 
@@ -97,6 +98,9 @@ object CallEndGatekeeper {
         CallEndMetrics.recordAttempt(app)
         markCallHandled(dedupe)
         lastLaunchElapsedMs = SystemClock.elapsedRealtime()
+
+        // Hang-up sequence: drop during-call popup before after-call Activity.
+        DuringCallOverlayHost.dismiss()
 
         val fullscreen = CallEndEligibility.shouldUseFullscreen(
             isKeyguardLocked = locked,

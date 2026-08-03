@@ -219,6 +219,12 @@
 
         </service>
 
+        <!-- Short-lived FG service while during-call overlay is visible only. -->
+        <service
+            android:name=".service.CallOverlayForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall"/>
+
         <!-- After-call: unlocked / non-missed. Explicit Intent only. -->
         <activity
             android:name=".calling.CallEndPopupActivity"

@@ -105,7 +105,9 @@ object CallEndOverlayHost {
         durationState.value = event.durationMs
 
         cancelFallback()
-        // Never leave a stale overlay from a previous call.
+        // Truecaller hang-up: drop during-call bubble before after-call UI.
+        DuringCallOverlayHost.dismiss()
+        // Never leave a stale after-call overlay from a previous call.
         if (overlayView != null) {
             Log.d(TAG, "OverlayHost: dismissing stale overlay before new launch")
             dismissOverlayOnly()

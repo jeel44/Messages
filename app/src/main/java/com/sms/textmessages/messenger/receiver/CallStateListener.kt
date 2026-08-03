@@ -5,22 +5,38 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
+import android.os.SystemClock
 import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.sms.textmessages.messenger.calling.CallEndEvent
 import com.sms.textmessages.messenger.calling.CallEndGatekeeper
+import com.sms.textmessages.messenger.calling.DuringCallOverlayHost
+import com.sms.textmessages.messenger.ui.overlay.DuringCallPhase
 import com.sms.textmessages.messenger.utils.CallSessionStore
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
 enum class CallEndType { INCOMING, OUTGOING, MISSED }
 
+/**
+ * Truecaller-style call flow:
+ * - RINGING / OFFHOOK → during-call overlay bubble
+ * - IDLE → dismiss bubble, then after-call Activity via Gatekeeper
+ */
 class CallStateListener : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "CALLEND_DEBUG"
         private const val CALL_LOG_MATCH_WINDOW_MS = 30_000L
+        // When the process was just born for a late OFFHOOK near hangup, delay
+        // the during-call bubble briefly so a following IDLE can cancel it and
+        // go straight to the after-call Activity.
+        private const val FRESH_PROCESS_MS = 2_500L
+        private const val COLD_DURING_CALL_DEBOUNCE_MS = 350L
 
         private var lastState = TelephonyManager.CALL_STATE_IDLE
         private var sawRinging = false
@@ -28,6 +44,9 @@ class CallStateListener : BroadcastReceiver() {
         private var offhookStartMs = 0L
         private var capturedNumber: String? = null
         private var sessionLoaded = false
+
+        private val mainHandler = Handler(Looper.getMainLooper())
+        private var pendingDuringCall: Runnable? = null
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -71,6 +90,42 @@ class CallStateListener : BroadcastReceiver() {
                 "captured=${describeNumber(capturedNumber)} callEndEnabled=${PreferenceManager.isCallEndEnabled(appContext)}"
         )
         handleState(appContext, state, phoneNumber)
+    }
+
+    private fun isFreshProcess(): Boolean =
+        SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime() < FRESH_PROCESS_MS
+
+    private fun cancelPendingDuringCall() {
+        pendingDuringCall?.let { mainHandler.removeCallbacks(it) }
+        pendingDuringCall = null
+    }
+
+    private fun scheduleDuringCall(
+        context: Context,
+        phoneNumber: String?,
+        phase: DuringCallPhase
+    ) {
+        cancelPendingDuringCall()
+        val delay = if (isFreshProcess()) COLD_DURING_CALL_DEBOUNCE_MS else 0L
+        val task = Runnable {
+            pendingDuringCall = null
+            if (CallSessionStore.load(context)?.wasBlocked == true) {
+                Log.d(TAG, "DuringCall skip - call was blocked")
+                return@Runnable
+            }
+            try {
+                DuringCallOverlayHost.show(context, phoneNumber, phase)
+            } catch (e: Exception) {
+                Log.e(TAG, "DuringCall show $phase failed: ${e.message}", e)
+            }
+        }
+        pendingDuringCall = task
+        if (delay == 0L) {
+            task.run()
+        } else {
+            Log.d(TAG, "DuringCall cold-start debounce ${delay}ms phase=$phase")
+            mainHandler.postDelayed(task, delay)
+        }
     }
 
     private fun ensureSessionLoaded(context: Context) {
@@ -160,6 +215,9 @@ class CallStateListener : BroadcastReceiver() {
                 lastState = state
                 persist(context)
                 Log.d(TAG, "PHONE_STATE → RINGING captured=${describeNumber(capturedNumber)}")
+                if (PreferenceManager.isCallEndEnabled(context)) {
+                    scheduleDuringCall(context, capturedNumber, DuringCallPhase.RINGING)
+                }
             }
 
             TelephonyManager.CALL_STATE_OFFHOOK -> {
@@ -172,14 +230,22 @@ class CallStateListener : BroadcastReceiver() {
                     "PHONE_STATE → OFFHOOK sawRinging=$sawRinging offhookStartMs=$offhookStartMs " +
                         "captured=${describeNumber(capturedNumber)}"
                 )
+                if (PreferenceManager.isCallEndEnabled(context)) {
+                    val phase = if (sawRinging) DuringCallPhase.IN_CALL else DuringCallPhase.OUTGOING
+                    scheduleDuringCall(context, capturedNumber, phase)
+                }
             }
 
             TelephonyManager.CALL_STATE_IDLE -> {
                 Log.d(
                     TAG,
                     "PHONE_STATE → IDLE sawRinging=$sawRinging sawOffhook=$sawOffhook " +
-                        "captured=${describeNumber(capturedNumber)}"
+                        "captured=${describeNumber(capturedNumber)} duringShowing=${DuringCallOverlayHost.isShowing()}"
                 )
+                cancelPendingDuringCall()
+                // Truecaller sequence: dismiss during-call popup, then Activity.
+                DuringCallOverlayHost.dismiss()
+
                 if (sawRinging || sawOffhook) {
                     val type = when {
                         sawOffhook && sawRinging -> CallEndType.INCOMING
