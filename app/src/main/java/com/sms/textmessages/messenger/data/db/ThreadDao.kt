@@ -43,7 +43,7 @@ interface ThreadDao {
 
     // Same archived=0 AND blocked=0 filter as getThreadsFlow, so this count
     // matches exactly what's shown bolded/dotted in the inbox list - used by
-    // CallEndOverlayManager's post-call "back to Messages" banner.
+    // CallEndFullscreenActivity / CallEndPopupActivity "back to Messages" banner.
     @Query("SELECT COUNT(*) FROM sms_threads WHERE archived = 0 AND blocked = 0 AND isRead = 0")
     suspend fun getUnreadThreadCount(): Int
 

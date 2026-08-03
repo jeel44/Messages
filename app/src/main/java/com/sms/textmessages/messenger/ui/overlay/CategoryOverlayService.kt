@@ -38,14 +38,8 @@ import com.sms.textmessages.messenger.utils.OverlayPermission
 // running Service is only needed here to provide the Lifecycle/
 // SavedStateRegistry/ViewModelStore owners ComposeView requires, and to
 // outlive the single onReceive() call long enough to show/auto-dismiss the
-// card. This intentionally stays independent of the call-end overlay
-// (CallEndOverlayManager, a plain object with no Service at all) - the two
-// were briefly merged onto a single shared persistent foreground service
-// (OverlayHostService) to fix a call-end reliability bug, but that service
-// kept the whole process alive indefinitely, which isn't how Calldorado's
-// actual PHONE_STATE-receiver-only architecture works and isn't needed here:
-// this overlay only has to survive the brief SMS_DELIVER priority window,
-// not an arbitrary amount of time afterward.
+// card. Independent of the after-call Activities (CallEndPopupActivity /
+// CallEndFullscreenActivity) — those never use WindowManager overlays.
 class CategoryOverlayService : LifecycleService(), SavedStateRegistryOwner, ViewModelStoreOwner {
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)

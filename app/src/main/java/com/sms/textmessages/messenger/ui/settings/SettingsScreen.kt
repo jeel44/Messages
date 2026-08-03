@@ -90,7 +90,7 @@ fun SettingsScreen(
     }
 
     BackHandler {
-        AdCache.showInterstitial(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
+        AdCache.onClickGated(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
             onBack()
         }
     }
@@ -116,7 +116,7 @@ fun SettingsScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = {
-                            AdCache.showInterstitial(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
+                            AdCache.onClickGated(activity, AdPlacement.SETTINGS_INTERSTITIAL) {
                                 onBack()
                             }
                         }
@@ -280,11 +280,7 @@ fun SettingsScreen(
             SettingsToggleItem(
                 icon = Icons.Filled.Call,
                 text = "Call end screen",
-                subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    "Show caller info after calls (needs call screener on Android 11+)"
-                } else {
-                    "Show caller info and ads after calls"
-                },
+                subtitle = "Show caller info in an after-call screen when a call ends",
                 checked = callEndEnabled,
                 onCheckedChange = { enabled ->
                     callEndEnabled = enabled

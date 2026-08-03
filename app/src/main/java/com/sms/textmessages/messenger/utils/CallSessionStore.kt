@@ -15,6 +15,7 @@ object CallSessionStore {
     private const val KEY_SAW_OFFHOOK = "saw_offhook"
     private const val KEY_OFFHOOK_START_MS = "offhook_start_ms"
     private const val KEY_NUMBER = "captured_number"
+    private const val KEY_WAS_BLOCKED = "was_blocked"
     private const val KEY_UPDATED_MS = "updated_ms"
 
     // Sessions older than this are treated as stale (abandoned calls).
@@ -25,7 +26,8 @@ object CallSessionStore {
         val sawRinging: Boolean,
         val sawOffhook: Boolean,
         val offhookStartMs: Long,
-        val capturedNumber: String?
+        val capturedNumber: String?,
+        val wasBlocked: Boolean = false
     )
 
     fun save(
@@ -34,7 +36,8 @@ object CallSessionStore {
         sawRinging: Boolean,
         sawOffhook: Boolean,
         offhookStartMs: Long,
-        capturedNumber: String?
+        capturedNumber: String?,
+        wasBlocked: Boolean = false
     ) {
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
             .putInt(KEY_LAST_STATE, lastState)
@@ -42,8 +45,23 @@ object CallSessionStore {
             .putBoolean(KEY_SAW_OFFHOOK, sawOffhook)
             .putLong(KEY_OFFHOOK_START_MS, offhookStartMs)
             .putString(KEY_NUMBER, capturedNumber)
+            .putBoolean(KEY_WAS_BLOCKED, wasBlocked)
             .putLong(KEY_UPDATED_MS, System.currentTimeMillis())
             .apply()
+    }
+
+    fun markBlocked(context: Context, number: String?) {
+        val existing = load(context)
+        save(
+            context,
+            lastState = existing?.lastState ?: TelephonyManager.CALL_STATE_RINGING,
+            sawRinging = existing?.sawRinging ?: true,
+            sawOffhook = existing?.sawOffhook ?: false,
+            offhookStartMs = existing?.offhookStartMs ?: 0L,
+            capturedNumber = number?.takeIf { it.isNotBlank() } ?: existing?.capturedNumber,
+            wasBlocked = true
+        )
+        Log.d(TAG, "CallSessionStore.markBlocked number=${number ?: "null"}")
     }
 
     fun load(context: Context): Session? {
@@ -61,7 +79,8 @@ object CallSessionStore {
             sawRinging = prefs.getBoolean(KEY_SAW_RINGING, false),
             sawOffhook = prefs.getBoolean(KEY_SAW_OFFHOOK, false),
             offhookStartMs = prefs.getLong(KEY_OFFHOOK_START_MS, 0L),
-            capturedNumber = prefs.getString(KEY_NUMBER, null)
+            capturedNumber = prefs.getString(KEY_NUMBER, null),
+            wasBlocked = prefs.getBoolean(KEY_WAS_BLOCKED, false)
         )
     }
 

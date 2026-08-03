@@ -10,12 +10,13 @@ import android.os.Looper
 import android.provider.CallLog
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.sms.textmessages.messenger.ui.overlay.CallEndOverlayManager
+import com.sms.textmessages.messenger.calling.CallEndEvent
+import com.sms.textmessages.messenger.calling.CallEndGatekeeper
 import com.sms.textmessages.messenger.utils.CallEndMetrics
+import com.sms.textmessages.messenger.utils.CallSessionStore
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
-// Secondary call-end path when PHONE_STATE / during-call overlay never ran.
-// Only fires when call-end is enabled and no overlay is already showing.
+// Secondary call-end path when PHONE_STATE / POST_CALL never ran.
 class CallLogCallEndObserver(
     private val appContext: Context,
     handler: Handler = Handler(Looper.getMainLooper())
@@ -23,7 +24,6 @@ class CallLogCallEndObserver(
 
     companion object {
         private const val TAG = "CALLEND_DEBUG"
-        // Keep short so CallLog fallback feels like call-end, not a random late popup.
         private const val DEBOUNCE_MS = 500L
         private const val MAX_AGE_MS = 20_000L
 
@@ -58,7 +58,6 @@ class CallLogCallEndObserver(
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
         if (!PreferenceManager.isCallEndEnabled(appContext)) return
-        if (CallEndOverlayManager.isShowing()) return
 
         pending?.let { debounceHandler.removeCallbacks(it) }
         val task = Runnable { handleLatestCall() }
@@ -67,7 +66,6 @@ class CallLogCallEndObserver(
     }
 
     private fun handleLatestCall() {
-        if (CallEndOverlayManager.isShowing()) return
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.READ_CALL_LOG) !=
             PackageManager.PERMISSION_GRANTED
         ) return
@@ -103,20 +101,28 @@ class CallLogCallEndObserver(
                     else -> return
                 }
                 val key = "${number.orEmpty()}|$typeInt|$date"
-                if (CallEndOverlayManager.wasCallHandled(key)) {
+                if (CallEndGatekeeper.wasCallHandled(key)) {
                     Log.d(TAG, "CallLogCallEndObserver: already handled $key")
                     return
                 }
-                CallEndOverlayManager.markCallHandled(key)
-                // Reaching call-end via CallLog means the primary during-call /
-                // PHONE_STATE path missed — strong OEM-kill signal.
-                CallEndMetrics.recordMiss(appContext, "primary_missed_calllog_fallback")
-                Log.d(TAG, "CallLogCallEndObserver: triggering call-end type=$callType number=$number")
-                CallEndOverlayManager.show(
+                CallEndGatekeeper.markCallHandled(key)
+                val session = CallSessionStore.load(appContext)
+                Log.d(
+                    TAG,
+                    "CallLogCallEndObserver → Gatekeeper type=$callType number=$number " +
+                        "durationSec=$durationSec ageMs=$age wasBlocked=${session?.wasBlocked}"
+                )
+                CallEndGatekeeper.onCallEnded(
                     appContext,
-                    callType,
-                    number?.takeIf { it.isNotBlank() },
-                    durationSec * 1000L
+                    CallEndEvent(
+                        number = number?.takeIf { it.isNotBlank() },
+                        displayName = "Unknown",
+                        type = callType,
+                        durationMs = durationSec * 1000L,
+                        timestampMs = date,
+                        wasBlocked = session?.wasBlocked == true,
+                        source = CallEndEvent.Source.CALL_LOG
+                    )
                 )
             }
         } catch (e: Exception) {

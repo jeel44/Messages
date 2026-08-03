@@ -23,6 +23,7 @@ object PreferenceManager {
     private const val KEY_OEM_BATTERY_HELP_DISMISSED = "oem_battery_help_dismissed"
     private const val KEY_OEM_BATTERY_HELP_COUNT = "oem_battery_help_count"
     private const val KEY_OEM_BATTERY_HELP_LAST_MS = "oem_battery_help_last_ms"
+    private const val KEY_PREMIUM_SUBSCRIBED = "premium_subscribed"
 
     fun isFirstLaunch(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -31,7 +32,7 @@ object PreferenceManager {
 
     fun setFirstLaunchDone(context: Context) {
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(KEY_FIRST_LAUNCH, false).apply()
+        prefs.edit().putBoolean(KEY_FIRST_LAUNCH, false).commit()
     }
 
     fun getArchivedNumbers(context: Context): Set<String> {
@@ -252,5 +253,16 @@ object PreferenceManager {
             .putInt(KEY_OEM_BATTERY_HELP_COUNT, prefs.getInt(KEY_OEM_BATTERY_HELP_COUNT, 0) + 1)
             .putLong(KEY_OEM_BATTERY_HELP_LAST_MS, System.currentTimeMillis())
             .apply()
+    }
+
+    /** Paying users skip call-end (and other) ad slots. Default false until billing lands. */
+    fun isPremiumSubscribed(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_PREMIUM_SUBSCRIBED, false)
+    }
+
+    fun setPremiumSubscribed(context: Context, subscribed: Boolean) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_PREMIUM_SUBSCRIBED, subscribed).apply()
     }
 }

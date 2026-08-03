@@ -93,17 +93,28 @@ fun LanguageScreen() {
                     tint = Color.White,
                     modifier = Modifier.clickable {
 
-                        // OPTIONAL: Save selected language
+                        val localeCode = LocaleManager.toLocaleCode(selectedLanguage!!)
                         val prefs = activity.getSharedPreferences("settings", Context.MODE_PRIVATE)
-                        prefs.edit().putString("app_lang", selectedLanguage).apply()
+                        // commit() so MainActivity sees the value before we navigate/recreate
+                        prefs.edit().putString("app_lang", localeCode).commit()
 
-                        LocaleManager.setLocale(activity, selectedLanguage!!)
+                        LocaleManager.setLocale(activity, localeCode)
 
-                        // 🔥 GO TO SET DEFAULT SCREEN
-                        activity.startActivity(
-                            Intent(activity, com.sms.textmessages.messenger.MainActivity::class.java)
-                        )
-                        activity.finish()
+                        // LanguageScreen can run inside MainActivity (app_lang still null on
+                        // cold start after GetStarted marked first-launch done). Main is
+                        // singleTop — startActivity(Main) + finish() would destroy the only
+                        // task and look like a crash. Recreate instead.
+                        if (activity is com.sms.textmessages.messenger.MainActivity) {
+                            activity.recreate()
+                        } else {
+                            activity.startActivity(
+                                Intent(activity, com.sms.textmessages.messenger.MainActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                        Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                }
+                            )
+                            activity.finish()
+                        }
                     }
                 )
             }

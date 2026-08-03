@@ -86,6 +86,10 @@ object AdCache {
             Log.w(TAG, "WARM_CALL | skipped - AdCache.start() not called")
             return
         }
+        if (com.sms.textmessages.messenger.utils.PreferenceManager.isPremiumSubscribed(app)) {
+            Log.d(TAG, "WARM_CALL | skipped - premium subscribed")
+            return
+        }
         Log.d(TAG, "WARM_CALL | begin inFlight=${inFlight.get()} rcReady=${RemoteConfigManager.isReady}")
         drainDeferredUntilRc()
         ensure(AdPlacement.CALL_END_BANNER, app)

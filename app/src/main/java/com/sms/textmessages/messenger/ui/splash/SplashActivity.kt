@@ -20,9 +20,14 @@ class SplashActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
 
         val prefs = newBase.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        val lang = prefs.getString("app_lang", "en")!!
+        val lang = prefs.getString("app_lang", "en") ?: "en"
+        // Normalize legacy display-name values (e.g. "English") to ISO codes.
+        val normalized = LocaleManager.toLocaleCode(lang)
+        if (normalized != lang) {
+            prefs.edit().putString("app_lang", normalized).apply()
+        }
 
-        val context = LocaleManager.setLocale(newBase, lang)
+        val context = LocaleManager.setLocale(newBase, normalized)
 
         super.attachBaseContext(context)
     }

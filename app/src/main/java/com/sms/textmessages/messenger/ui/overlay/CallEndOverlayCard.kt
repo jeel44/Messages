@@ -96,7 +96,8 @@ fun CallEndOverlayCard(
     onDismiss: () -> Unit,
     onCopyNumber: () -> Unit,
     onViewContact: () -> Unit,
-    onReportSpam: () -> Unit
+    onReportSpam: () -> Unit,
+    showAdSlot: Boolean = true
 ) {
     // Derived from what's already on hand (no extra params needed): a real
     // contact match means displayName came from getContactName(), which is
@@ -301,17 +302,21 @@ fun CallEndOverlayCard(
             Spacer(modifier = Modifier.height(if (isCompact) 12.dp else 16.dp))
 
             ////////////////////////////////////////////////////////
-            // 🔵 AD SLOT - one large dark rounded box filling the remaining space
+            // 🔵 AD SLOT - in-Activity only; never drawn as an overlay window
             ////////////////////////////////////////////////////////
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(AdSlotDark)
-            ) {
-                CallEndBannerAdSection(bannerAd)
+            if (showAdSlot) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(AdSlotDark)
+                ) {
+                    CallEndBannerAdSection(bannerAd)
+                }
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
             }
 
             Spacer(modifier = Modifier.height(if (isCompact) 12.dp else 16.dp))

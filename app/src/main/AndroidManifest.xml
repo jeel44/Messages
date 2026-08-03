@@ -207,10 +207,7 @@
         <!-- ================= CALL SCREENING SERVICE ================= -->
 
         <!-- Bound by Telecom while this app holds ROLE_CALL_SCREENING.
-             Screens incoming calls (block list / optional silence unknowns)
-             and is the Play-justified reason for that role; on Android 11+
-             holding the role also auto-grants SYSTEM_ALERT_WINDOW for the
-             call-end overlay. -->
+             Screens incoming calls (block list / optional silence unknowns). -->
         <service
             android:name=".service.CallScreeningServiceImpl"
             android:permission="android.permission.BIND_SCREENING_SERVICE"
@@ -222,18 +219,38 @@
 
         </service>
 
-        <!-- Short-lived FG service while call overlay is visible only. -->
-        <service
-            android:name=".service.CallOverlayForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="phoneCall"/>
-
+        <!-- After-call: unlocked / non-missed. Explicit Intent only. -->
         <activity
-            android:name=".ui.overlay.CallEndActivity"
+            android:name=".calling.CallEndPopupActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=".calling.CallEndScreen"
+            android:theme="@style/Theme.CallEndPopup"/>
+
+        <!-- After-call: locked device or missed call. Explicit Intent only. -->
+        <activity
+            android:name=".calling.CallEndFullscreenActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=".calling.CallEndScreen"
+            android:theme="@style/Theme.CallEndFullscreen"/>
+
+        <!-- Telecom POST_CALL (API 29+): screening-only after-call entry.
+             NoDisplay host that forwards to CallEndGatekeeper then finishes. -->
+        <activity
+            android:name=".calling.PostCallReceiverActivity"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
             android:taskAffinity=""
-            android:theme="@style/Theme.Smstextmessagesmessenger"/>
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.action.POST_CALL"/>
+            </intent-filter>
+        </activity>
 
     </application>
 

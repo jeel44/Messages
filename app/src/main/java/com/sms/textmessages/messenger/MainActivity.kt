@@ -73,8 +73,8 @@ class MainActivity : ComponentActivity() {
             requestRuntimePermissions()
         }
 
-    // Launcher for ROLE_CALL_SCREENING - on Android 11+ holding this role
-    // auto-grants SYSTEM_ALERT_WINDOW for the call-end overlay.
+    // Launcher for ROLE_CALL_SCREENING — used for call screening + after-call
+    // (Activity path). Overlay auto-grant still helps CategoryOverlayService.
     private val callScreeningRoleLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val held = CallScreeningRole.isHeld(this)
@@ -83,17 +83,14 @@ class MainActivity : ComponentActivity() {
                 "ROLE_DEBUG",
                 "Call screening role result=${result.resultCode}, isHeld=$held, canDrawOverlays=$canDraw"
             )
-            if (held && !canDraw) {
-                maybeOfferOverlaySettingsLastResort()
-            }
             if (held) {
                 CallLogCallEndObserver.registerIfNeeded(this)
             }
         }
 
     // READ_PHONE_STATE for CallStateListener, the manifest-declared receiver
-    // that drives the post-call overlay - requested here rather than bundled
-    // into requestSmsPermissions() since it's functionally unrelated
+    // that feeds CallEndGatekeeper after calls — requested here rather than
+    // bundled into requestSmsPermissions() since it's functionally unrelated
     // (telephony state, not SMS content) even though both fire at startup.
     // No re-registration needed on grant: CallStateListener is a manifest
     // receiver, so it's active as soon as the permission is held.
@@ -327,9 +324,7 @@ class MainActivity : ComponentActivity() {
         ) != PackageManager.PERMISSION_GRANTED
     }
 
-    // Draw-over-other-apps permission for CategoryOverlayService's popup and
-    // the call-end overlay. Used only on pre-Android 11; Android 11+ gets
-    // overlay via ROLE_CALL_SCREENING instead (see requestCallScreeningRole).
+    // Draw-over-other-apps for after-call overlay + SMS CategoryOverlayService.
     private fun requestOverlayPermission() {
         android.util.Log.d(
             "ROLE_DEBUG",
@@ -377,41 +372,27 @@ class MainActivity : ComponentActivity() {
         callScreeningRoleLauncher.launch(intent)
     }
 
-    // From Home: Android 11+ asks for call screener (overlay auto-grant);
-    // older APIs keep the Appear-on-top Settings flow.
+    // From Home: call screener + overlay (SYSTEM_ALERT_WINDOW) for after-call.
+    // Overlay is required because MIUI blocks background Activity starts.
     private fun requestCallEndPrerequisitesIfNeeded() {
-        if (CallScreeningRole.isOverlayAutoGrantApi()) {
+        if (CallScreeningRole.isRoleApiAvailable()) {
             requestCallScreeningRoleIfNeeded()
-            // Role already held from a previous session — still ensure AppOp.
             if (CallScreeningRole.isHeld(this)) {
-                if (!OverlayPermission.ensureOverlayAfterCallScreener(this)) {
-                    maybeOfferOverlaySettingsLastResort()
+                val canDraw = OverlayPermission.ensureOverlayAfterCallScreener(this)
+                android.util.Log.d("CALLEND_DEBUG", "call-end prereq: screener held canDrawOverlays=$canDraw")
+                if (!canDraw) {
+                    requestOverlayPermissionIfNeeded()
                 }
                 CallLogCallEndObserver.registerIfNeeded(this)
             }
         } else {
             requestOverlayPermissionIfNeeded()
         }
+        if (!OverlayPermission.canDrawOverlays(this)) {
+            android.util.Log.w("CALLEND_DEBUG", "call-end prereq: still no overlay permission")
+            requestOverlayPermissionIfNeeded()
+        }
         android.util.Log.d("CALLEND_DEBUG", "metrics ${CallEndMetrics.summary(this)}")
-    }
-
-    // Last resort on Android 11+ when role is held but canDrawOverlays is still
-    // false (OEM quirk or prior explicit deny). One-shot dialog — not primary UX.
-    private fun maybeOfferOverlaySettingsLastResort() {
-        if (PreferenceManager.isOverlayLastResortOffered(this)) return
-        if (OverlayPermission.canDrawOverlays(this)) return
-        PreferenceManager.setOverlayLastResortOffered(this)
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Allow display over other apps")
-            .setMessage(
-                "Messages needs this to show caller ID during calls and the after-call screen. " +
-                    "Turn on Display over other apps for Messages."
-            )
-            .setPositiveButton("Open settings") { _, _ ->
-                OverlayPermission.requestOverlayPermission(this)
-            }
-            .setNegativeButton("Not now", null)
-            .show()
     }
 
     // Requests the default-SMS-handler role before any runtime permission

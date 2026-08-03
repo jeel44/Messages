@@ -1,20 +1,17 @@
 package com.sms.textmessages.messenger.service
 
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.telecom.Call
 import android.telecom.CallScreeningService
 import android.telecom.Connection
 import android.util.Log
-import com.sms.textmessages.messenger.ui.overlay.CallEndOverlayManager
-import com.sms.textmessages.messenger.ui.overlay.DuringCallPhase
+import com.sms.textmessages.messenger.utils.CallSessionStore
 import com.sms.textmessages.messenger.utils.ContactLookup
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
 // Screens incoming calls while this app holds ROLE_CALL_SCREENING.
-// Also starts the Truecaller-style during-call overlay (caller ID bubble)
-// for incoming and outgoing so the process stays alive until hangup.
+// Feeds block outcomes into CallSessionStore for the eventual CallEndEvent.
+// Does NOT launch the after-call screen — that goes through CallEndGatekeeper.
 class CallScreeningServiceImpl : CallScreeningService() {
 
     companion object {
@@ -25,27 +22,14 @@ class CallScreeningServiceImpl : CallScreeningService() {
         val number = callDetails.handle?.schemeSpecificPart?.takeIf { it.isNotBlank() }
         val isIncoming = callDetails.callDirection == Call.Details.DIRECTION_INCOMING
 
-        val allowOverlay = if (isIncoming) {
+        if (isIncoming) {
             respondIncoming(callDetails, number)
         } else {
             respondToCall(callDetails, allowResponse())
-            true
-        }
-
-        if (allowOverlay && PreferenceManager.isCallEndEnabled(this)) {
-            val phase = if (isIncoming) DuringCallPhase.RINGING else DuringCallPhase.OUTGOING
-            Handler(Looper.getMainLooper()).post {
-                try {
-                    CallEndOverlayManager.showDuringCall(applicationContext, number, phase)
-                } catch (e: Exception) {
-                    Log.e(TAG, "showDuringCall from screening failed: ${e.message}", e)
-                }
-            }
         }
     }
 
-    // Returns false when the call is fully blocked (no caller-ID overlay).
-    private fun respondIncoming(callDetails: Call.Details, number: String?): Boolean {
+    private fun respondIncoming(callDetails: Call.Details, number: String?) {
         val last10 = number?.takeLast(10)
         val isBlocked = last10 != null &&
             PreferenceManager.getBlockedNumbers(this).contains(last10)
@@ -81,7 +65,10 @@ class CallScreeningServiceImpl : CallScreeningService() {
                 .setSkipNotification(false)
                 .build()
         )
-        return !disallow
+
+        if (disallow) {
+            CallSessionStore.markBlocked(applicationContext, number)
+        }
     }
 
     private fun allowResponse(): CallResponse =
