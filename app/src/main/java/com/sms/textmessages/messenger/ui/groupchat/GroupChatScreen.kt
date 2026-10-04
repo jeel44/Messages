@@ -29,6 +29,7 @@ import com.sms.textmessages.messenger.ui.chat.DateSeparator
 import com.sms.textmessages.messenger.ui.chat.MessageInputBar
 import com.sms.textmessages.messenger.ui.chat.isSameDay
 import com.sms.textmessages.messenger.ui.chat.sendSms
+import com.sms.textmessages.messenger.ui.common.formatMessageText
 import com.sms.textmessages.messenger.ui.home.generateColorFromName
 import com.sms.textmessages.messenger.ui.home.getContactName
 import kotlinx.coroutines.CoroutineScope
@@ -244,7 +245,7 @@ fun GroupChatScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Color(0xFFF0F2F5))
+                .background(Color.White)
         ) {
 
             LazyColumn(
@@ -322,8 +323,15 @@ private fun GroupChatBubble(message: GroupChatMessage, senderName: String) {
                     .background(if (message.isMe) AccentBlue else Color(0xFFEDEDED))
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(
+                val linkColor = if (message.isMe) Color.White else AccentBlue
+                val linkifiedText = formatMessageText(
+                    context = LocalContext.current,
                     text = message.text,
+                    linkColor = linkColor
+                )
+
+                Text(
+                    text = linkifiedText,
                     color = if (message.isMe) Color.White else Color(0xFF1A1A1A),
                     fontSize = 15.sp,
                     fontFamily = GeneralSansMedium

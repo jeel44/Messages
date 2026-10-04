@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.buildAnnotatedString
@@ -41,11 +42,11 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sms.textmessages.messenger.R
 import com.sms.textmessages.messenger.receiver.NotificationCategory
+import com.sms.textmessages.messenger.ui.common.formatMessageText
 import com.sms.textmessages.messenger.ui.home.extractCopyableCode
 import com.sms.textmessages.messenger.ui.theme.AccentBlue
 import com.sms.textmessages.messenger.ui.theme.InputPillBg
@@ -246,11 +247,12 @@ fun CategoryOverlayCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = if (category == NotificationCategory.OTP) {
-                        boldOtpDigits(messageBody, visuals.secondaryText, visuals.onCard)
-                    } else {
-                        buildAnnotatedString { append(messageBody) }
-                    },
+                    text = formatMessageText(
+                        context = LocalContext.current,
+                        text = messageBody,
+                        linkColor = visuals.onCard,
+                        boldColor = visuals.onCard
+                    ),
                     color = visuals.secondaryText,
                     fontFamily = OverlaySansMedium,
                     fontSize = 13.sp,
@@ -321,20 +323,3 @@ private fun OverlayActionButton(
     }
 }
 
-private fun boldOtpDigits(body: String, base: Color, boldColor: Color) = buildAnnotatedString {
-    val code = extractCopyableCode(body)
-    if (code == null) {
-        append(body)
-        return@buildAnnotatedString
-    }
-    val start = body.indexOf(code)
-    if (start < 0) {
-        append(body)
-        return@buildAnnotatedString
-    }
-    append(body.substring(0, start))
-    withStyle(style = androidx.compose.ui.text.SpanStyle(color = boldColor, fontWeight = FontWeight.Bold)) {
-        append(code)
-    }
-    append(body.substring(start + code.length))
-}

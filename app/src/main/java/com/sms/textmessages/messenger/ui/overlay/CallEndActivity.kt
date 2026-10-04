@@ -3,6 +3,7 @@ package com.sms.textmessages.messenger.ui.overlay
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import com.sms.textmessages.messenger.ads.AdCache
 import com.sms.textmessages.messenger.ads.AdPlacement
@@ -15,7 +16,9 @@ class CallEndActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
 
         val phoneNumber = intent.getStringExtra(EXTRA_PHONE)
         val callTypeName = intent.getStringExtra(EXTRA_TYPE) ?: CallEndType.MISSED.name

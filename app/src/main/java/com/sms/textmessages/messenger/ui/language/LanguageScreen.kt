@@ -60,7 +60,7 @@ fun LanguageScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF2F2F2))
+            .background(Color.White)
     ) {
 
         // 🔵 TOP BAR

@@ -88,6 +88,7 @@ fun NewConversationScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .background(Color.White)
         ) {
 
             Column(

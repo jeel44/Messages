@@ -60,7 +60,6 @@ import com.sms.textmessages.messenger.utils.PRIVACY_POLICY_URL
 import com.sms.textmessages.messenger.utils.PreferenceManager
 
 private val AccentBlue = Color(0xFF3E6AE1)
-private val CardBg = Color(0xFFF1F1F1)
 private val FeatureIconBg = Color(0xFFE6F1FB)
 
 @Composable
@@ -134,7 +133,7 @@ fun GetStartedScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(CardBg)
+            .background(Color.White)
     ) {
 
         // 🔵 TOP SECTION - solid app blue, ~40% of the screen
@@ -191,7 +190,7 @@ fun GetStartedScreen() {
                 .fillMaxWidth()
                 .weight(0.6f)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(CardBg)
+                .background(Color.White)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally

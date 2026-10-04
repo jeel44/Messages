@@ -56,6 +56,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import android.content.Intent
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -66,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.sms.textmessages.messenger.ui.common.formatMessageText
 import com.sms.textmessages.messenger.ui.theme.PrimaryBlue
 import com.sms.textmessages.messenger.utils.PreferenceManager
 import com.sms.textmessages.messenger.ui.media.MediaAttachment
@@ -131,8 +133,8 @@ fun ChatScreen(
     // below). Either way the LazyColumn's first-ever composed frame is
     // already scrolled to the bottom, so there's nothing to animate or
     // scroll-to afterward - no top-then-jump flash on open.
-    val listState = remember(phoneNumber, chatMessages.isNotEmpty()) {
-        LazyListState(firstVisibleItemIndex = (chatMessages.size - 1).coerceAtLeast(0))
+    val listState = remember(phoneNumber) {
+        LazyListState()
     }
 
     // Personal (non service-sender) threads get the new visual design;
@@ -226,14 +228,9 @@ fun ChatScreen(
         if (chatMessages.isNotEmpty()) {
 
             if (firstLoad) {
-                // No scroll call needed here - the listState above was already
-                // constructed positioned at the last item the moment
-                // chatMessages first became non-empty, so this frame is
-                // already correct. Just stop treating future size changes
-                // (new incoming message, banner appearing) as the first load.
                 firstLoad = false
             } else {
-                listState.animateScrollToItem(chatMessages.lastIndex)
+                listState.animateScrollToItem(0)
             }
         }
     }
@@ -261,7 +258,6 @@ fun ChatScreen(
     }
 
     Scaffold(
-        modifier = Modifier.imePadding(),
 
         ////////////////////////////////////////////////////////
         // 🔵 TOP BAR
@@ -495,96 +491,13 @@ fun ChatScreen(
             }
         },
 
-        ////////////////////////////////////////////////////////
-        // 🔵 BOTTOM BAR
-        ////////////////////////////////////////////////////////
-
-        bottomBar = {
-
-            Column {
-
-                if (isServiceSender(phoneNumber)) {
-
-                    // Non-interactive placeholder shaped like the new pill input
-                    // (same 24dp corner / muted fill as MessageInputBar's text
-                    // field) so it reads as "disabled input", not leftover UI -
-                    // but with no BasicTextField or send button, since this
-                    // sender can never be replied to.
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White)
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color(0xFFF1F1F1))
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-
-                            Icon(
-                                painter = painterResource(R.drawable.ic_warning),
-                                contentDescription = null,
-                                tint = Color(0xFF9AA0AC),
-                                modifier = Modifier.size(18.dp)
-                            )
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Text(
-                                text = "Can't reply to this short code.",
-                                color = Color(0xFF9AA0AC),
-                                fontSize = 14.sp,
-                                fontFamily = GeneralSansMedium
-                            )
-                        }
-                    }
-
-                } else {
-
-                    MessageInputBar(
-                        phoneNumber = phoneNumber,
-                        autoFocus = autoFocusInput,
-                        onMessageSent = { sentText ->
-
-                            val now = System.currentTimeMillis()
-                            val time = java.text.SimpleDateFormat(
-                                "hh:mm a",
-                                java.util.Locale.getDefault()
-                            ).format(java.util.Date(now))
-
-                            chatMessages = (chatMessages + ChatMessage(
-                                text = sentText,
-                                time = time,
-                                date = now,
-                                isMe = true,
-                                // Negative sentinel id - this optimistic bubble isn't backed
-                                // by a real provider row yet (that arrives once loadMessages()
-                                // reloads), so it can never collide with a real _id.
-                                id = -now,
-                                deliveryState = DeliveryState.SENT
-                            )).toMutableList()
-                        }
-                    )
-
-                    if (RemoteConfigManager.chatBannerEnabled()) {
-                        ChatBannerAdSection()
-                    }
-                }
-            }
-        }
-
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .background(Color(0xFFF0F2F5))
+                .background(Color.White)
+                .imePadding()
         ) {
 
 
@@ -592,16 +505,6 @@ fun ChatScreen(
             // 🔵 MESSAGE LIST
             ////////////////////////////////////////////////////////
 
-            // chatMessages starts empty when the caller (AppNavigation) is
-            // still resolving this thread's messages off the main thread -
-            // composing the LazyColumn during that gap would show it briefly
-            // empty, then jump once real data lands via LaunchedEffect(messages)
-            // above. Holding a plain same-background Box instead until real
-            // content exists means the LazyColumn's first-ever composed frame
-            // is already both populated AND correctly scrolled (see listState
-            // above) - no empty flash, no top-then-bottom jump. A genuinely
-            // empty thread (new contact, no history yet) looks identical
-            // either way, since there's no separate "no messages" placeholder.
             if (chatMessages.isEmpty()) {
 
                 Box(
@@ -612,21 +515,23 @@ fun ChatScreen(
 
             } else {
 
+                val reversedMessages = remember(filteredMessages) { filteredMessages.reversed() }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    reverseLayout = false,
+                    reverseLayout = true,
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
 
-                    itemsIndexed(filteredMessages) { index, message ->
+                    itemsIndexed(reversedMessages) { index, message ->
 
                         val showDateHeader =
-                            index == 0 ||
+                            index == reversedMessages.size - 1 ||
                                     !isSameDay(
-                                        filteredMessages[index - 1].date,
+                                        reversedMessages[index + 1].date,
                                         message.date
                                     )
 
@@ -638,11 +543,83 @@ fun ChatScreen(
                             message = message,
                             isPersonalChat = isPersonalChat,
                             onMediaClick = { attachment ->
-                                val index = threadAttachments.indexOfFirst { it.uri == attachment.uri }
-                                if (index >= 0) onMediaClick(index)
+                                val idx = threadAttachments.indexOfFirst { it.uri == attachment.uri }
+                                if (idx >= 0) onMediaClick(idx)
                             }
                         )
                     }
+                }
+            }
+
+            ////////////////////////////////////////////////////////
+            // 🔵 BOTTOM BAR
+            ////////////////////////////////////////////////////////
+
+            if (isServiceSender(phoneNumber)) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xFFF1F1F1))
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+
+                        Icon(
+                            painter = painterResource(R.drawable.ic_warning),
+                            contentDescription = null,
+                            tint = Color(0xFF9AA0AC),
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "Can't reply to this short code.",
+                            color = Color(0xFF9AA0AC),
+                            fontSize = 14.sp,
+                            fontFamily = GeneralSansMedium
+                        )
+                    }
+                }
+
+            } else {
+
+                MessageInputBar(
+                    phoneNumber = phoneNumber,
+                    autoFocus = autoFocusInput,
+                    listState = listState,
+                    onMessageSent = { sentText ->
+
+                        val now = System.currentTimeMillis()
+                        val time = java.text.SimpleDateFormat(
+                            "hh:mm a",
+                            java.util.Locale.getDefault()
+                        ).format(java.util.Date(now))
+
+                        chatMessages = (chatMessages + ChatMessage(
+                            text = sentText,
+                            time = time,
+                            date = now,
+                            isMe = true,
+                            id = -now,
+                            deliveryState = DeliveryState.SENT
+                        )).toMutableList()
+                    }
+                )
+
+                if (RemoteConfigManager.chatBannerEnabled()) {
+                    ChatBannerAdSection()
                 }
             }
         }
@@ -852,24 +829,15 @@ fun ChatBubble(
                     )
 
                 } else {
+                    val linkColor = if (message.isMe) Color.White else PrimaryBlue
+                    val linkifiedText = formatMessageText(
+                        context = context,
+                        text = message.text,
+                        linkColor = linkColor
+                    )
 
                     Text(
-                        text = if (copyableCode != null) {
-                            buildAnnotatedString {
-                                val start = message.text.indexOf(copyableCode)
-                                if (start < 0) {
-                                    append(message.text)
-                                } else {
-                                    append(message.text.substring(0, start))
-                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                                        append(copyableCode)
-                                    }
-                                    append(message.text.substring(start + copyableCode.length))
-                                }
-                            }
-                        } else {
-                            AnnotatedString(message.text)
-                        },
+                        text = linkifiedText,
                         color = if (message.isMe) Color.White else Color(0xFF1A1A1A),
                         fontSize = 15.sp,
                         fontFamily = GeneralSansMedium
@@ -1018,13 +986,15 @@ fun ChatBubble(
 fun MessageInputBar(
     phoneNumber: String,
     onMessageSent: (String) -> Unit,
-    autoFocus: Boolean = false
+    autoFocus: Boolean = false,
+    listState: LazyListState? = null
 ) {
 
     var text by remember { mutableStateOf("") }
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(autoFocus) {
         if (autoFocus) {
@@ -1041,6 +1011,7 @@ fun MessageInputBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.White)
+                .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1077,7 +1048,14 @@ fun MessageInputBar(
                     onValueChange = { text = it },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { state ->
+                            if (state.isFocused && listState != null) {
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(0)
+                                }
+                            }
+                        },
                     textStyle = LocalTextStyle.current.copy(
                         color = Color.Black,
                         fontFamily = GeneralSansMedium
