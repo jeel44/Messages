@@ -5,6 +5,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.navigation.compose.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.sms.textmessages.messenger.ui.theme.PrimaryBlue
 import com.sms.textmessages.messenger.data.db.AppDatabase
 import com.sms.textmessages.messenger.data.db.GroupEntity
 import com.sms.textmessages.messenger.ui.archived.ArchivedScreen
@@ -91,56 +99,59 @@ fun AppNavigation(
             val autoFocus = backStackEntry.arguments?.getBoolean("autoFocus") ?: false
             val context = LocalContext.current
 
-            // Start with the raw phone number so the chat UI renders immediately;
-            // replace with the resolved display name once the contacts lookup finishes.
-            var contactName by remember(phone) { mutableStateOf(getContactName(context, phone)) }
-
-            // ChatScreen only renders whatever messages it's given - this route
-            // owns loading them, same as HomeScreen does for its own chat entry
-            // point. Already the full SMS+MMS timeline (SmsRepository.loadThreadMessages),
-            // not just the SMS half, so there's no separate attachments state
-            // to preload/pass alongside it.
+            var contactName by remember(phone) { mutableStateOf(phone) }
             var messages by remember(phone) { mutableStateOf<List<ChatMessage>>(emptyList()) }
             var threadId by remember(phone) { mutableStateOf(0L) }
+            var isLoading by remember(phone) { mutableStateOf(true) }
 
             LaunchedEffect(phone) {
-                val resolved = withContext(Dispatchers.IO) { getContactName(context, phone) }
-                if (resolved.isNotEmpty()) contactName = resolved
-            }
-
-            LaunchedEffect(phone) {
+                val resolvedName = withContext(Dispatchers.IO) { getContactName(context, phone) }
                 val resolvedThreadId = withContext(Dispatchers.IO) {
                     SmsRepository.findExistingThreadId(context, phone) ?: 0L
                 }
-                threadId = resolvedThreadId
-                messages = withContext(Dispatchers.IO) {
+                val loadedMessages = withContext(Dispatchers.IO) {
                     SmsRepository.loadThreadMessages(context, resolvedThreadId)
                 }
+                contactName = resolvedName.ifEmpty { phone }
+                threadId = resolvedThreadId
+                messages = loadedMessages
+                isLoading = false
             }
 
-            ChatScreen(
-                contactName = contactName,
-                phoneNumber = phone,
-                threadId = threadId,
-                messages = messages,
-                onBackClick = {
-                    navController.popBackStack()
-                },
-                onContactClick = {
-                    navController.navigate(Screen.ContactInfo.createRoute(phone, contactName))
-                },
-                onMediaClick = { index ->
-                    navController.navigate(Screen.MediaViewer.createRoute(phone, index))
-                },
-                onOpenSharedMedia = {
-                    navController.navigate(Screen.SharedMedia.createRoute(phone))
-                },
-                onBlockContact = {
-                    navController.popBackStack(route = "home", inclusive = false)
-                },
-                startWithSearchOpen = startSearch,
-                autoFocusInput = autoFocus
-            )
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = PrimaryBlue)
+                }
+            } else {
+                ChatScreen(
+                    contactName = contactName,
+                    phoneNumber = phone,
+                    threadId = threadId,
+                    messages = messages,
+                    onBackClick = {
+                        navController.popBackStack()
+                    },
+                    onContactClick = {
+                        navController.navigate(Screen.ContactInfo.createRoute(phone, contactName))
+                    },
+                    onMediaClick = { index ->
+                        navController.navigate(Screen.MediaViewer.createRoute(phone, index))
+                    },
+                    onOpenSharedMedia = {
+                        navController.navigate(Screen.SharedMedia.createRoute(phone))
+                    },
+                    onBlockContact = {
+                        navController.popBackStack(route = "home", inclusive = false)
+                    },
+                    startWithSearchOpen = startSearch,
+                    autoFocusInput = autoFocus
+                )
+            }
         }
 
         composable(Screen.ContactInfo.route) { backStackEntry ->
