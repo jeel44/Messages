@@ -2077,10 +2077,15 @@ fun markSelectedAsRead(context: Context, threadIds: Set<Long>) {
         )
     }
 }
+private val contactNameCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
 fun getContactName(context: Context, phoneNumber: String): String {
 
     if (phoneNumber.isBlank()) {
         return ""
+    }
+    if (contactNameCache.containsKey(phoneNumber)) {
+        return contactNameCache[phoneNumber]!!
     }
 
     val uri = android.net.Uri.withAppendedPath(
@@ -2088,7 +2093,7 @@ fun getContactName(context: Context, phoneNumber: String): String {
         android.net.Uri.encode(phoneNumber)
     )
 
-    return try {
+    val result = try {
 
         val cursor = context.contentResolver.query(
             uri,
@@ -2104,15 +2109,20 @@ fun getContactName(context: Context, phoneNumber: String): String {
                     android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME
                 )
                 if (nameIndex != -1) {
-                    return it.getString(nameIndex)
+                    it.getString(nameIndex)
+                } else {
+                    phoneNumber
                 }
+            } else {
+                phoneNumber
             }
-        }
-
-        phoneNumber
+        } ?: phoneNumber
 
     } catch (e: Exception) {
         phoneNumber
     }
+
+    contactNameCache[phoneNumber] = result
+    return result
 }
 

@@ -214,6 +214,7 @@ fun ChatScreen(
     }
 
     var firstLoad by remember(phoneNumber) { mutableStateOf(true) }
+    var previousMessageCount by remember(phoneNumber) { mutableStateOf(chatMessages.size) }
 
     // The ad banner loads asynchronously and grows the bottom bar after the
     // initial layout/scroll, shrinking the LazyColumn's viewport without a
@@ -229,9 +230,10 @@ fun ChatScreen(
 
             if (firstLoad) {
                 firstLoad = false
-            } else {
+            } else if (chatMessages.size > previousMessageCount || bannerVisible) {
                 listState.animateScrollToItem(0)
             }
+            previousMessageCount = chatMessages.size
         }
     }
 

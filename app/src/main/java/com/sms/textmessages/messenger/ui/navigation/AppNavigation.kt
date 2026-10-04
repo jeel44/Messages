@@ -93,7 +93,7 @@ fun AppNavigation(
 
             // Start with the raw phone number so the chat UI renders immediately;
             // replace with the resolved display name once the contacts lookup finishes.
-            var contactName by remember(phone) { mutableStateOf(phone) }
+            var contactName by remember(phone) { mutableStateOf(getContactName(context, phone)) }
 
             // ChatScreen only renders whatever messages it's given - this route
             // owns loading them, same as HomeScreen does for its own chat entry
