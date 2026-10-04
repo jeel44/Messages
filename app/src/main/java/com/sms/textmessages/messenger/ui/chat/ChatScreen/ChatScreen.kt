@@ -143,7 +143,7 @@ fun ChatScreen(
 
     LaunchedEffect(messages) {
         if (messages.isNotEmpty()) {
-            chatMessages = messages.toMutableList()
+            chatMessages = mergeMessages(messages, chatMessages)
         }
     }
 
@@ -165,7 +165,7 @@ fun ChatScreen(
                 scope.launch(Dispatchers.IO) {
                     val updated = SmsRepository.loadThreadMessages(context, threadId)
                     withContext(Dispatchers.Main) {
-                        chatMessages = updated.toMutableList()
+                        chatMessages = mergeMessages(updated, chatMessages)
                     }
                 }
             }
@@ -1254,4 +1254,10 @@ fun isSameDay(t1: Long, t2: Long): Boolean {
 
     return c1.get(java.util.Calendar.YEAR) == c2.get(java.util.Calendar.YEAR) &&
             c1.get(java.util.Calendar.DAY_OF_YEAR) == c2.get(java.util.Calendar.DAY_OF_YEAR)
+}
+
+fun mergeMessages(dbMessages: List<ChatMessage>, currentMessages: List<ChatMessage>): MutableList<ChatMessage> {
+    val pendingMessages = currentMessages.filter { it.id < 0 }
+    val combined = (dbMessages + pendingMessages).distinctBy { it.id }.sortedBy { it.date }
+    return combined.toMutableList()
 }
