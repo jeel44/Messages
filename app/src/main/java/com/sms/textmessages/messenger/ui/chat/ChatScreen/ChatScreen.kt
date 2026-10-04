@@ -137,6 +137,12 @@ fun ChatScreen(
         LazyListState()
     }
 
+    LaunchedEffect(chatMessages.size) {
+        if (chatMessages.isNotEmpty()) {
+            listState.scrollToItem(chatMessages.lastIndex)
+        }
+    }
+
     // Personal (non service-sender) threads get the new visual design;
     // OTP/Transaction/Offers threads keep the existing look untouched.
     val isPersonalChat = !isServiceSender(phoneNumber)
@@ -213,27 +219,13 @@ fun ChatScreen(
         context.sendBroadcast(Intent("SMS_INBOX_UPDATED"))
     }
 
-    var firstLoad by remember(phoneNumber) { mutableStateOf(true) }
-    var previousMessageCount by remember(phoneNumber) { mutableStateOf(chatMessages.size) }
-
-    // The ad banner loads asynchronously and grows the bottom bar after the
-    // initial layout/scroll, shrinking the LazyColumn's viewport without a
-    // compensating re-scroll. Re-running the scroll-to-bottom effect when the
-    // banner appears keeps the last message from ending up hidden behind it.
     val bannerVisible = isPersonalChat &&
         RemoteConfigManager.chatBannerEnabled() &&
         AdCache.bannerState(AdPlacement.CHAT_BANNER).value != null
 
-    LaunchedEffect(chatMessages.size, bannerVisible) {
-
-        if (chatMessages.isNotEmpty()) {
-
-            if (firstLoad) {
-                firstLoad = false
-            } else if (chatMessages.size > previousMessageCount || bannerVisible) {
-                listState.animateScrollToItem(0)
-            }
-            previousMessageCount = chatMessages.size
+    LaunchedEffect(bannerVisible) {
+        if (bannerVisible && chatMessages.isNotEmpty()) {
+            listState.scrollToItem(chatMessages.lastIndex)
         }
     }
 
@@ -517,23 +509,21 @@ fun ChatScreen(
 
             } else {
 
-                val reversedMessages = remember(filteredMessages) { filteredMessages.reversed() }
-
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
-                    reverseLayout = true,
+                    reverseLayout = false,
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
 
-                    itemsIndexed(reversedMessages) { index, message ->
+                    itemsIndexed(filteredMessages) { index, message ->
 
                         val showDateHeader =
-                            index == reversedMessages.size - 1 ||
+                            index == 0 ||
                                     !isSameDay(
-                                        reversedMessages[index + 1].date,
+                                        filteredMessages[index - 1].date,
                                         message.date
                                     )
 
@@ -545,8 +535,8 @@ fun ChatScreen(
                             message = message,
                             isPersonalChat = isPersonalChat,
                             onMediaClick = { attachment ->
-                                val idx = threadAttachments.indexOfFirst { it.uri == attachment.uri }
-                                if (idx >= 0) onMediaClick(idx)
+                                val index = threadAttachments.indexOfFirst { it.uri == attachment.uri }
+                                if (index >= 0) onMediaClick(index)
                             }
                         )
                     }
