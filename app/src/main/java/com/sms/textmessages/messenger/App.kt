@@ -48,8 +48,42 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
         // Return from onCreate before anything heavier so AMS can finish attach.
         Handler(Looper.getMainLooper()).post {
             CallLogCallEndObserver.registerIfNeeded(this)
+            preloadContacts()
             Log.d("CALLEND_DEBUG", "App.onCreate metrics ${CallEndMetrics.summary(this)}")
             scheduleAdsInit()
+        }
+    }
+
+    private fun preloadContacts() {
+        Executors.newSingleThreadExecutor().execute {
+            try {
+                val uri = android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+                val cursor = contentResolver.query(
+                    uri,
+                    arrayOf(
+                        android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+                        android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                    ),
+                    null, null, null
+                )
+                cursor?.use {
+                    val numberIdx = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
+                    val nameIdx = it.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    if (numberIdx != -1 && nameIdx != -1) {
+                        while (it.moveToNext()) {
+                            val number = it.getString(numberIdx) ?: continue
+                            val name = it.getString(nameIdx) ?: continue
+                            val normalized = number.takeLast(10)
+                            if (normalized.isNotBlank()) {
+                                com.sms.textmessages.messenger.ui.home.contactNameCache[normalized] = name
+                                com.sms.textmessages.messenger.ui.home.contactNameCache[number] = name
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ContactPreload", "Failed to preload contacts", e)
+            }
         }
     }
 
