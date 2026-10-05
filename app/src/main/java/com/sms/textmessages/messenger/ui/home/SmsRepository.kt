@@ -35,7 +35,11 @@ data class SmsThread(
     val date: Long,
     val isRead: Boolean,
     val threadId: Long,
-    val pinned: Boolean = false
+    val pinned: Boolean = false,
+    // Resolved contact name (falls back to phone). Only populated by
+    // HomeViewModel.smsList, so the inbox's first emission already carries
+    // names instead of resolving them in a second pass after render.
+    val displayName: String = ""
 )
 
 ////////////////////////////////////////////////////////
@@ -45,6 +49,13 @@ data class SmsThread(
 object SmsRepository {
 
     private var memoryCache: List<SmsThread>? = null
+
+    // Latest inbox rows (getThreadsFlow()'s query) held in memory: first
+    // filled by App.preloadThreads() at process start, then kept current by
+    // HomeViewModel on every Room emission. HomeViewModel uses it as
+    // smsList's starting value so cached rows render on the first frame.
+    @Volatile
+    var threadSnapshot: List<ThreadEntity>? = null
     private val contactCache = HashMap<String, String>()
 
     // archived/blocked/pinned live in PreferenceManager (durable across the
@@ -203,8 +214,6 @@ object SmsRepository {
                     date = now - 1000 // keep slightly behind current time
                 }
                 val isRead = resolveIsRead(existingByThreadId[threadId], date, it.getInt(readIndex) == 1)
-
-                Log.d("TRACE_REPO", "THREAD -> id=$threadId date=$date body=$body")
 
                 threadMap[threadId] = SmsThread(
                     phone = phone,
@@ -465,6 +474,98 @@ object SmsRepository {
             Log.d("TRACE_REPO", "AFTER SORT -> id=${it.threadId} date=${it.date}")
         }
         return threads
+    }
+
+    ////////////////////////////////////////////////////////
+    // RECORD A SINGLE SENT/RECEIVED MESSAGE INTO ROOM
+    ////////////////////////////////////////////////////////
+
+    // Survives the caller (a composable click handler or a BroadcastReceiver)
+    // so the Room write still lands after sendSms() returns.
+    private val ioScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
+    // Single shared path for SmsReceiver and sendSms(): after a message is
+    // written to content://sms, bump that thread's Room row (lastMessage/
+    // date/isRead) so getThreadsFlow()'s ORDER BY date re-sorts immediately,
+    // instead of only on the next full refreshThreads() sync at launch.
+    // insertedUri is the Uri content://sms returned for the new row - its
+    // thread_id is the provider's real one.
+    suspend fun recordMessage(
+        context: Context,
+        phone: String,
+        body: String,
+        date: Long,
+        isRead: Boolean,
+        insertedUri: Uri?
+    ) {
+        val threadId = threadIdForUri(context, insertedUri)
+            ?: threadIdForAddress(context, phone)
+            ?: phone.hashCode().toLong()
+
+        val dao = AppDatabase.getDatabase(context).threadDao()
+
+        if (dao.updateLatest(threadId, body, date, isRead) == 0) {
+            // insertThreads uses REPLACE, so archived/blocked/pinned must be
+            // stamped from PreferenceManager or a new row would drop them.
+            val (archived, blocked, pinned) = stampFlags(context, phone)
+            dao.insertThreads(
+                listOf(
+                    ThreadEntity(
+                        threadId = threadId,
+                        phone = normalizeNumber(phone),
+                        lastMessage = body,
+                        date = date,
+                        isRead = isRead,
+                        archived = archived,
+                        blocked = blocked,
+                        pinned = pinned
+                    )
+                )
+            )
+        }
+    }
+
+    // Fire-and-forget wrapper for non-suspend callers (sendSms()).
+    fun recordMessageAsync(
+        context: Context,
+        phone: String,
+        body: String,
+        date: Long,
+        isRead: Boolean,
+        insertedUri: Uri?
+    ) {
+        val appContext = context.applicationContext
+        ioScope.launch {
+            try {
+                recordMessage(appContext, phone, body, date, isRead, insertedUri)
+            } catch (e: Exception) {
+                Log.e("TRACE_REPO", "recordMessage failed for $phone", e)
+            }
+        }
+    }
+
+    private fun threadIdForUri(context: Context, uri: Uri?): Long? {
+        if (uri == null) return null
+        return context.contentResolver.query(
+            uri,
+            arrayOf(Telephony.Sms.THREAD_ID),
+            null,
+            null,
+            null
+        )?.use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+    }
+
+    // Same exact-address lookup SmsReceiver previously did inline.
+    private fun threadIdForAddress(context: Context, phone: String): Long? {
+        return context.contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(Telephony.Sms.THREAD_ID),
+            "${Telephony.Sms.ADDRESS} = ?",
+            arrayOf(phone),
+            "${Telephony.Sms.DATE} DESC"
+        )?.use { if (it.moveToFirst()) it.getLong(0) else null }
     }
 
     ////////////////////////////////////////////////////////

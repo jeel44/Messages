@@ -49,6 +49,7 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
         Handler(Looper.getMainLooper()).post {
             CallLogCallEndObserver.registerIfNeeded(this)
             preloadContacts()
+            preloadThreads()
             Log.d("CALLEND_DEBUG", "App.onCreate metrics ${CallEndMetrics.summary(this)}")
             scheduleAdsInit()
         }
@@ -73,7 +74,10 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
                         while (it.moveToNext()) {
                             val number = it.getString(numberIdx) ?: continue
                             val name = it.getString(nameIdx) ?: continue
-                            val normalized = number.takeLast(10)
+                            // Strip formatting ("+91 79900-96382") before the
+                            // last-10 key, or it never matches the thread-side
+                            // phone.takeLast(10) lookup in getContactName().
+                            val normalized = number.filter { c -> c.isDigit() || c == '+' }.takeLast(10)
                             if (normalized.isNotBlank()) {
                                 com.sms.textmessages.messenger.ui.home.contactNameCache[normalized] = name
                                 com.sms.textmessages.messenger.ui.home.contactNameCache[number] = name
@@ -83,6 +87,28 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
                 }
             } catch (e: Exception) {
                 Log.e("ContactPreload", "Failed to preload contacts", e)
+            } finally {
+                Log.d("ContactPreload", "contactPreloadDone entries=${com.sms.textmessages.messenger.ui.home.contactNameCache.size}")
+                com.sms.textmessages.messenger.ui.home.contactPreloadDone.complete(Unit)
+            }
+        }
+    }
+
+    // Opens Room and reads the inbox rows before Home is shown, so
+    // HomeViewModel can start from them instead of waiting on a cold
+    // database open + first query after the screen appears.
+    private fun preloadThreads() {
+        Executors.newSingleThreadExecutor().execute {
+            try {
+                val threads = com.sms.textmessages.messenger.data.db.AppDatabase
+                    .getDatabase(this).threadDao().getThreadsSnapshot()
+                // Don't clobber a fresher list HomeViewModel may already have written.
+                if (com.sms.textmessages.messenger.ui.home.SmsRepository.threadSnapshot == null) {
+                    com.sms.textmessages.messenger.ui.home.SmsRepository.threadSnapshot = threads
+                }
+                Log.d("ThreadPreload", "threadSnapshot ready size=${threads.size}")
+            } catch (e: Exception) {
+                Log.e("ThreadPreload", "Failed to preload threads", e)
             }
         }
     }

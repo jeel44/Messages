@@ -276,7 +276,8 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val smsList by viewModel.smsList.collectAsState()
+    val smsListOrNull by viewModel.smsList.collectAsState()
+    val smsList = smsListOrNull.orEmpty()
     val isLoading by viewModel.isLoading.collectAsState()
 
     // Trigger initial sync from content://sms into Room the moment InboxUI is composed.
@@ -419,44 +420,9 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
     val filters = listOf("All SMS", "Personal", "Transaction", "OTPs", "Offers")
     var selectedFilter by remember { mutableStateOf("All SMS") }
 
-    // Resolved on Dispatchers.IO into a plain local map, then flushed to the
-    // Compose state map in batches of 50 - not one Main-thread commit per
-    // contact. With 2000+ threads, writing to contactNames per-lookup forced
-    // 1000+ individual recomposition passes over the entire InboxUI scope in
-    // a row, right as the list first appears - exactly when the user starts
-    // scrolling - which measured as a 4x jump in janky frames (gfxinfo) versus
-    // scrolling once resolution had finished. Batching collapses that to a
-    // couple dozen commits while still revealing names progressively.
-    val contactNames = remember { mutableStateMapOf<String, String>() }
-    LaunchedEffect(smsList) {
-
-        withContext(Dispatchers.IO) {
-
-            val pending = HashMap<String, String>()
-
-            smsList.forEach { sms ->
-
-                if (!contactNames.containsKey(sms.phone) && !pending.containsKey(sms.phone)) {
-
-                    pending[sms.phone] = getContactName(context, sms.phone)
-
-                    if (pending.size >= 50) {
-                        val batch = HashMap(pending)
-                        pending.clear()
-                        withContext(Dispatchers.Main) {
-                            contactNames.putAll(batch)
-                        }
-                    }
-                }
-            }
-
-            if (pending.isNotEmpty()) {
-                withContext(Dispatchers.Main) {
-                    contactNames.putAll(pending)
-                }
-            }
-        }
-    }
+    // Contact names arrive already resolved on each SmsThread (displayName,
+    // filled in HomeViewModel.smsList before first emission) - no separate
+    // resolution pass here.
 
     LaunchedEffect(selectedFilter) {
         listState.animateScrollToItem(0)
@@ -470,11 +436,11 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
     }
 
     val searchIndex: List<Triple<SmsThread, String, String>> =
-        remember(smsList, contactNames) {
+        remember(smsList) {
 
             smsList.map { sms ->
 
-                val name = contactNames[sms.phone] ?: sms.phone
+                val name = sms.displayName
 
                 Triple(
                     sms,
@@ -990,7 +956,10 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                 NativeAdSection(nativeAd)
             }
 
-            if (isLoading && smsList.isEmpty()) {
+            // Spinner until smsList has actually emitted (null = still awaiting
+            // contact preload/name resolution), and still while the first sync
+            // runs if Room was empty (fresh install).
+            if (smsListOrNull == null || (isLoading && smsList.isEmpty())) {
 
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -1079,7 +1048,7 @@ fun InboxUI(onSearchClick: () -> Unit = {}) {
                             }
                         ) {
                             MessageItem(
-                                sender = contactNames[sms.phone] ?: sms.phone,
+                                sender = sms.displayName,
                                 message = sms.lastMessage,
                                 time = time,
                                 isRead = if (selectedChat?.phone == sms.phone) true else sms.isRead,
@@ -2078,6 +2047,19 @@ fun markSelectedAsRead(context: Context, threadIds: Set<Long>) {
     }
 }
 val contactNameCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+// Completed by App.preloadContacts() once contactNameCache has been filled
+// (or the preload failed, e.g. no READ_CONTACTS) - HomeViewModel awaits it
+// before its first emission so a cold start doesn't fall back to one
+// PhoneLookup query per number.
+val contactPreloadDone = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+// Cache-only counterpart to getContactName(): same two keys, but never
+// queries the provider - null on a miss.
+fun getCachedContactName(phoneNumber: String): String? {
+    if (phoneNumber.isBlank()) return ""
+    return contactNameCache[phoneNumber] ?: contactNameCache[phoneNumber.takeLast(10)]
+}
 
 fun getContactName(context: Context, phoneNumber: String): String {
 

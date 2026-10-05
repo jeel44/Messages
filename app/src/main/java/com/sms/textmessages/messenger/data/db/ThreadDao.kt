@@ -10,6 +10,12 @@ interface ThreadDao {
     @Query("SELECT * FROM sms_threads WHERE archived = 0 AND blocked = 0 ORDER BY pinned DESC, date DESC")
     fun getThreadsFlow(): kotlinx.coroutines.flow.Flow<List<ThreadEntity>>
 
+    // Blocking one-shot of getThreadsFlow()'s exact query - App.preloadThreads()
+    // calls it on a background executor at process start to pre-warm Room
+    // and hand HomeViewModel a starting snapshot.
+    @Query("SELECT * FROM sms_threads WHERE archived = 0 AND blocked = 0 ORDER BY pinned DESC, date DESC")
+    fun getThreadsSnapshot(): List<ThreadEntity>
+
     @Query("SELECT * FROM sms_threads WHERE archived = 1 ORDER BY pinned DESC, date DESC")
     fun getArchivedThreadsFlow(): kotlinx.coroutines.flow.Flow<List<ThreadEntity>>
 
@@ -28,6 +34,13 @@ interface ThreadDao {
 
     @Query("UPDATE sms_threads SET isRead = 1 WHERE threadId = :threadId")
     suspend fun markThreadAsRead(threadId: Long)
+
+    // Targeted per-message write used by SmsRepository.recordMessage() on
+    // send/receive - bumps the ORDER BY date column without touching the
+    // archived/blocked/pinned flags. Returns rows updated (0 = thread not in
+    // Room yet, caller inserts it).
+    @Query("UPDATE sms_threads SET lastMessage = :body, date = :date, isRead = :isRead WHERE threadId = :threadId")
+    suspend fun updateLatest(threadId: Long, body: String, date: Long, isRead: Boolean): Int
 
     // Matched by trailing digits, same convention PreferenceManager's archived/
     // blocked/pinned number sets already use, since stored phone formatting

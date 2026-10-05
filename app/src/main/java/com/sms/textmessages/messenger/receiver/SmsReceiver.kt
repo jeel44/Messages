@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import com.sms.textmessages.messenger.ui.home.SmsRepository
 import com.sms.textmessages.messenger.ui.overlay.CategoryOverlayService
 import com.sms.textmessages.messenger.utils.PreferenceManager
 import kotlinx.coroutines.*
@@ -37,42 +38,33 @@ class SmsReceiver : BroadcastReceiver() {
 
             try {
 
-                val db = com.sms.textmessages.messenger.data.db.AppDatabase.getDatabase(context)
-                val dao = db.threadDao()
-
                 // As the default SMS app we must write the message to content://sms ourselves —
                 // Android 4.4+ does not do this for the default handler. Do it first so that
-                // lookUpThreadId (which queries content://sms) finds the real thread_id, and so
+                // recordMessage can read the real thread_id off the inserted row, and so
                 // that the chat screen's loadMessages query can see this message immediately.
+                val date = System.currentTimeMillis()
                 val smsValues = android.content.ContentValues().apply {
                     put("address", sender)
                     put("body", message)
-                    put("date", System.currentTimeMillis())
+                    put("date", date)
                     put("read", 0)
                     put("type", 1) // 1 = inbox / received
                 }
-                context.contentResolver.insert(
+                val insertedUri = context.contentResolver.insert(
                     android.net.Uri.parse("content://sms/inbox"),
                     smsValues
                 )
 
-                val realThreadId = lookUpThreadId(context, sender)
-
-                // insertThreads uses REPLACE, so archived/blocked/pinned must be
-                // re-stamped from PreferenceManager here or this new message would
-                // silently un-archive/un-pin the thread it belongs to.
-                val last10 = sender.takeLast(10)
-                val thread = com.sms.textmessages.messenger.data.db.ThreadEntity(
+                // Shared with sendSms() - bumps the thread's Room row (unread)
+                // with archived/blocked/pinned preserved.
+                SmsRepository.recordMessage(
+                    context,
                     phone = sender,
-                    lastMessage = message,
-                    date = System.currentTimeMillis(),
+                    body = message,
+                    date = date,
                     isRead = false,
-                    threadId = realThreadId,
-                    archived = PreferenceManager.getArchivedNumbers(context).contains(last10),
-                    blocked = PreferenceManager.getBlockedNumbers(context).contains(last10),
-                    pinned = PreferenceManager.getPinnedNumbers(context).contains(last10)
+                    insertedUri = insertedUri
                 )
-                dao.insertThreads(listOf(thread))
 
                 val updateIntent = Intent("SMS_INBOX_UPDATED")
                 updateIntent.setPackage(context.packageName)
@@ -90,18 +82,6 @@ class SmsReceiver : BroadcastReceiver() {
                 pendingResult.finish()
             }
         }
-    }
-
-    private fun lookUpThreadId(context: Context, sender: String): Long {
-        val cursor = context.contentResolver.query(
-            android.provider.Telephony.Sms.CONTENT_URI,
-            arrayOf(android.provider.Telephony.Sms.THREAD_ID),
-            "${android.provider.Telephony.Sms.ADDRESS} = ?",
-            arrayOf(sender),
-            "${android.provider.Telephony.Sms.DATE} DESC"
-        )
-        return cursor?.use { if (it.moveToFirst()) it.getLong(0) else sender.hashCode().toLong() }
-            ?: sender.hashCode().toLong()
     }
 
     ////////////////////////////////////////////////////////

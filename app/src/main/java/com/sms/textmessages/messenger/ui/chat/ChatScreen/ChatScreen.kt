@@ -1166,16 +1166,28 @@ fun sendSms(context: Context, phoneNumber: String, message: String) {
         )
 
         // Insert message into SMS database
+        val date = System.currentTimeMillis()
         val values = android.content.ContentValues().apply {
             put("address", phoneNumber)
             put("body", message)
-            put("date", System.currentTimeMillis())
+            put("date", date)
             put("type", 2) // 2 = sent
         }
 
-        context.contentResolver.insert(
+        val insertedUri = context.contentResolver.insert(
             android.net.Uri.parse("content://sms/sent"),
             values
+        )
+
+        // Bump the thread's Room row so the inbox re-sorts now - nothing
+        // else updates sms_threads on send until the next full resync.
+        SmsRepository.recordMessageAsync(
+            context,
+            phone = phoneNumber,
+            body = message,
+            date = date,
+            isRead = true,
+            insertedUri = insertedUri
         )
 
         // Broadcast updates
