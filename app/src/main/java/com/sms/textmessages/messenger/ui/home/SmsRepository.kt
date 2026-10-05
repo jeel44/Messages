@@ -541,7 +541,7 @@ object SmsRepository {
             try {
                 recordMessage(appContext, phone, body, date, isRead, insertedUri)
             } catch (e: Exception) {
-                Log.e("TRACE_REPO", "recordMessage failed for $phone", e)
+                Log.e("TRACE_REPO", "recordMessage failed", e)
             }
         }
     }
@@ -619,10 +619,6 @@ object SmsRepository {
                     )
                 )
             }
-        }
-
-        list.take(5).forEach {
-            Log.d("TRACE_REPO", "CHAT MSG -> date=${it.date} body=${it.body}")
         }
 
         return list

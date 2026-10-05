@@ -25,10 +25,6 @@ class SmsReceiver : BroadcastReceiver() {
 
         val message = messages.joinToString("") { it.displayMessageBody ?: "" }
 
-        Log.d("TRACE_SMS", "SMS received from=$sender msg=$message time=${System.currentTimeMillis()}")
-
-        Log.d("SMS_RECEIVER", "Sender: $sender Message: $message")
-
         // Overlay popup only - no system notification is posted for incoming SMS.
         showOverlay(context, sender, message)
 
@@ -77,7 +73,7 @@ class SmsReceiver : BroadcastReceiver() {
                 context.sendBroadcast(chatIntent)
 
             } catch (e: Exception) {
-                Log.e("SMS_RECEIVER", "Failed to process incoming SMS from $sender", e)
+                Log.e("SMS_RECEIVER", "Failed to process incoming SMS", e)
             } finally {
                 pendingResult.finish()
             }
