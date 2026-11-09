@@ -13,17 +13,16 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-permission android:name="android.permission.SEND_SMS"/>
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
-    <uses-permission android:name="android.permission.READ_CALL_LOG"/>
-    <uses-permission android:name="android.permission.CALL_PHONE"/>
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH"/>
     <uses-permission android:name="android.permission.READ_CELL_BROADCASTS"/>
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+
+    <!-- ===== CALL-END FEATURE (DISABLED): permissions removed =====
+         To restore, add these back and set CALL_END_FEATURE_ENABLED = true
+         in utils/Constants.kt, and restore the components block further down:
+           READ_PHONE_STATE, READ_CALL_LOG, CALL_PHONE, SYSTEM_ALERT_WINDOW,
+           FOREGROUND_SERVICE, FOREGROUND_SERVICE_PHONE_CALL,
+           REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, USE_FULL_SCREEN_INTENT -->
 
     <application
         android:name=".App"
@@ -120,18 +119,6 @@
 
         </receiver>
 
-        <!-- ================= CALL STATE RECEIVER ================= -->
-
-        <receiver
-            android:name=".receiver.CallStateListener"
-            android:exported="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE"/>
-            </intent-filter>
-
-        </receiver>
-
         <!-- ================= NOTIFICATION ACTION RECEIVERS ================= -->
 
         <receiver
@@ -204,25 +191,33 @@
             android:name=".ui.overlay.CategoryOverlayService"
             android:exported="false"/>
 
-        <!-- ================= CALL SCREENING SERVICE ================= -->
+        <!-- ================= CALL-END FEATURE (DISABLED) =================
+             Components kept here as a comment so they are no longer declared
+             (nothing is registered with the system). Code is still in the
+             project. To restore: uncomment this block, re-add the permissions
+             listed at the top, and set CALL_END_FEATURE_ENABLED = true.
 
-        <!-- Bound by Telecom while this app holds ROLE_CALL_SCREENING.
-             Screens incoming calls (block list / optional silence unknowns)
-             and is the Play-justified reason for that role; on Android 11+
-             holding the role also auto-grants SYSTEM_ALERT_WINDOW for the
-             call-end overlay. -->
+        <receiver
+            android:name=".receiver.CallStateListener"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
+
+        CallScreeningServiceImpl: bound by Telecom while the app holds
+        ROLE_CALL_SCREENING.
         <service
             android:name=".service.CallScreeningServiceImpl"
             android:permission="android.permission.BIND_SCREENING_SERVICE"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.telecom.CallScreeningService"/>
             </intent-filter>
-
         </service>
 
-        <!-- Short-lived FG service while call overlay is visible only. -->
+        CallOverlayForegroundService: short-lived foreground service while the
+        call overlay is visible.
         <service
             android:name=".service.CallOverlayForegroundService"
             android:exported="false"
@@ -234,6 +229,7 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Smstextmessagesmessenger"/>
+        ================================================================= -->
 
     </application>
 

@@ -151,6 +151,7 @@ object PreferenceManager {
     }
 
     fun isCallEndEnabled(context: Context): Boolean {
+        if (!CALL_END_FEATURE_ENABLED) return false
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         return prefs.getBoolean(KEY_CALL_END_ENABLED, true)
     }

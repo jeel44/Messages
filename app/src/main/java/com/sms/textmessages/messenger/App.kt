@@ -12,6 +12,7 @@ import com.sms.textmessages.messenger.ads.AdUnitIds
 import com.sms.textmessages.messenger.ads.RemoteConfigManager
 import com.sms.textmessages.messenger.receiver.CallLogCallEndObserver
 import com.sms.textmessages.messenger.ui.splash.SplashActivity
+import com.sms.textmessages.messenger.utils.CALL_END_FEATURE_ENABLED
 import com.sms.textmessages.messenger.utils.CallEndMetrics
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,6 +32,8 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
         var isFullScreenAdInFlight = false
 
         private const val TAG = "AdsInit"
+        // Same tag as AdCache so `adb logcat -s AdCache` shows trigger + show in one stream.
+        private const val APP_OPEN_TAG = "AdCache"
         private val adsInitStarted = AtomicBoolean(false)
     }
 
@@ -47,7 +50,7 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
 
         // Return from onCreate before anything heavier so AMS can finish attach.
         Handler(Looper.getMainLooper()).post {
-            CallLogCallEndObserver.registerIfNeeded(this)
+            if (CALL_END_FEATURE_ENABLED) CallLogCallEndObserver.registerIfNeeded(this)
             preloadContacts()
             preloadThreads()
             Log.d("CALLEND_DEBUG", "App.onCreate metrics ${CallEndMetrics.summary(this)}")
@@ -129,7 +132,7 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
 
         RemoteConfigManager.init {
             Log.d(TAG, "Remote Config activated - warming call-end AdCache only")
-            AdCache.warmCallEnd()
+            if (CALL_END_FEATURE_ENABLED) AdCache.warmCallEnd()
         }
     }
 
@@ -138,13 +141,21 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
         // Splash is only a zero-delay router — never show app-open on it,
         // but still count it so activityReferences stays accurate when it
         // immediately finishes into MainActivity/GetStarted.
+        Log.d(
+            APP_OPEN_TAG,
+            "TRIGGER_CHECK | ${activity.javaClass.simpleName} refs=$activityReferences " +
+                "changingCfg=$isActivityChangingConfigurations fullScreenInFlight=$isFullScreenAdInFlight " +
+                "disableAppOpenAd=$disableAppOpenAd"
+        )
         if (activity !is SplashActivity) {
             if (activityReferences == 0 && !isActivityChangingConfigurations && !isFullScreenAdInFlight) {
 
                 if (!disableAppOpenAd) {
+                    Log.d(APP_OPEN_TAG, "TRIGGER | foreground return → showAppOpen")
                     AdCache.showAppOpen(activity)
                 } else {
                     // skip only once (cold start after Splash routes to Main)
+                    Log.d(APP_OPEN_TAG, "TRIGGER_SKIP | disableAppOpenAd consumed")
                     disableAppOpenAd = false
                 }
             }
@@ -158,6 +169,11 @@ class App : Application(), Application.ActivityLifecycleCallbacks {
         isActivityChangingConfigurations = activity.isChangingConfigurations
 
         activityReferences--
+        Log.d(
+            APP_OPEN_TAG,
+            "STOPPED | ${activity.javaClass.simpleName} refs=$activityReferences " +
+                "changingCfg=$isActivityChangingConfigurations"
+        )
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}

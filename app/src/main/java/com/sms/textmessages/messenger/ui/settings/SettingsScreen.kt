@@ -55,6 +55,7 @@ import com.sms.textmessages.messenger.ads.AdCache
 import com.sms.textmessages.messenger.ads.AdPlacement
 import com.sms.textmessages.messenger.ui.common.AppSwitch
 import com.sms.textmessages.messenger.ui.theme.GeneralSans
+import com.sms.textmessages.messenger.utils.CALL_END_FEATURE_ENABLED
 import com.sms.textmessages.messenger.utils.CallEndMetrics
 import com.sms.textmessages.messenger.utils.CallScreeningRole
 import com.sms.textmessages.messenger.utils.OemBatteryGuide
@@ -221,6 +222,9 @@ fun SettingsScreen(
                 dialog.show()
             }
 
+            // Call-end feature is disabled (see CALL_END_FEATURE_ENABLED): the whole
+            // Calling / Advanced block stays in code but is not shown.
+            if (CALL_END_FEATURE_ENABLED) {
             Text(
                 text = "Calling",
                 fontSize = 13.sp,
@@ -332,6 +336,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
                 )
             }
+            } // end if (CALL_END_FEATURE_ENABLED)
 
             Text(
                 text = "Privacy",

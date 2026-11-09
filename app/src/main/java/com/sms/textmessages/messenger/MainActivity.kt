@@ -17,6 +17,7 @@ import com.sms.textmessages.messenger.ads.AdCache
 import com.sms.textmessages.messenger.ui.navigation.AppNavigation
 import com.sms.textmessages.messenger.ui.onboarding.CallLogDisclosureScreen
 import com.sms.textmessages.messenger.receiver.CallLogCallEndObserver
+import com.sms.textmessages.messenger.utils.CALL_END_FEATURE_ENABLED
 import com.sms.textmessages.messenger.utils.CallEndMetrics
 import com.sms.textmessages.messenger.utils.CallScreeningRole
 import com.sms.textmessages.messenger.utils.OemBatteryGuide
@@ -204,6 +205,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!CALL_END_FEATURE_ENABLED) return
         // After usage: if call-end missed enough times on this OEM, gently offer help.
         window.decorView.post {
             if (!isFinishing) {
@@ -295,6 +297,8 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPhoneStatePermission() {
 
+        if (!CALL_END_FEATURE_ENABLED) return
+
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.READ_PHONE_STATE
@@ -307,6 +311,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestCallLogPermission() {
+
+        if (!CALL_END_FEATURE_ENABLED) return
 
         if (ContextCompat.checkSelfPermission(
                 this,
@@ -321,6 +327,8 @@ class MainActivity : ComponentActivity() {
     // flag), and only if the permission isn't already granted or already decided
     // via a previous denial - respects a choice the user already made.
     private fun shouldShowCallLogDisclosure(): Boolean {
+
+        if (!CALL_END_FEATURE_ENABLED) return false
 
         if (PreferenceManager.isCallLogDisclosureShown(this)) {
             return false
@@ -369,6 +377,7 @@ class MainActivity : ComponentActivity() {
     }
 
     fun requestCallScreeningRole() {
+        if (!CALL_END_FEATURE_ENABLED) return
         val intent = CallScreeningRole.createRequestIntent(this)
         if (intent == null) {
             android.util.Log.d(
@@ -385,6 +394,7 @@ class MainActivity : ComponentActivity() {
     // From Home: Android 11+ asks for call screener (overlay auto-grant);
     // older APIs keep the Appear-on-top Settings flow.
     private fun requestCallEndPrerequisitesIfNeeded() {
+        if (!CALL_END_FEATURE_ENABLED) return
         if (CallScreeningRole.isOverlayAutoGrantApi()) {
             requestCallScreeningRoleIfNeeded()
             // Role already held from a previous session — still ensure AppOp.
