@@ -58,13 +58,6 @@ fun AppNavigation(
         }
     }
 
-    // Call-end prerequisites from Home: Appear-on-top Settings on pre-11,
-    // ROLE_CALL_SCREENING (auto-grants overlay) on Android 11+. One-shot
-    // flags inside MainActivity ensure each path prompts at most once.
-    LaunchedEffect(Unit) {
-        onRequestCallEndPrerequisites()
-    }
-
     NavHost(
         navController = navController,
         startDestination = "home"
